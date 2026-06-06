@@ -9,25 +9,35 @@ L'endpoint /api/generer fait tourner le pipeline et renvoie le JSON
 pas le quota API.
 """
 from datetime import date, timedelta
-from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
+from src import store
 from src.api_client import ApiFootball
 from src.ligues_mise_o_jeu import IDS_SOCCER, LIGUES_SOCCER
 from src.pipeline import fixtures_depuis_reponse, generer_pronostics
 
-app = FastAPI(title="BET — Générateur de tickets")
+app = FastAPI(title="BET — API")
+store.init_db()
 
-# app.py est dans backend/ ; le frontend est à la racine du projet
-WEB_DIR = Path(__file__).resolve().parent.parent / "frontend"
+# Autorise le frontend Next.js (dev) à appeler l'API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000", "http://127.0.0.1:3000",
+    ],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")
-def index():
-    return FileResponse(WEB_DIR / "index.html")
+def racine():
+    return {"service": "BET API", "ok": True}
 
 
 @app.get("/api/ligues")
@@ -85,6 +95,66 @@ def generer(
         return JSONResponse(resultat)
     except Exception as e:
         return JSONResponse({"erreur": str(e)}, status_code=500)
+
+
+# ===================== Tickets sauvegardés (history) =====================
+
+class SelectionIn(BaseModel):
+    match: str
+    ligue: str = ""
+    marche: str
+    cote: float
+    proba: float
+
+
+class TicketIn(BaseModel):
+    cote_totale: float
+    proba_reussite: float
+    value: float = 0.0
+    mise: float = 10.0
+    selections: list[SelectionIn]
+
+
+class StatutIn(BaseModel):
+    statut: str  # en_attente | gagne | perdu
+
+
+@app.post("/api/tickets")
+def creer_ticket(body: TicketIn):
+    combine = {
+        "cote_totale": body.cote_totale,
+        "proba_reussite": body.proba_reussite,
+        "value": body.value,
+        "selections": [s.model_dump() for s in body.selections],
+    }
+    return store.sauver_ticket(combine, mise=body.mise)
+
+
+@app.get("/api/tickets")
+def get_tickets():
+    return store.lister_tickets()
+
+
+@app.patch("/api/tickets/{ticket_id}")
+def maj_ticket(ticket_id: int, body: StatutIn):
+    try:
+        t = store.definir_statut(ticket_id, body.statut)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not t:
+        raise HTTPException(status_code=404, detail="Ticket introuvable")
+    return t
+
+
+@app.delete("/api/tickets/{ticket_id}")
+def del_ticket(ticket_id: int):
+    store.supprimer_ticket(ticket_id)
+    return {"ok": True}
+
+
+@app.get("/api/analytics")
+def get_analytics():
+    return store.analytics()
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ venv/
 
 # Données / cache (peu importe le dossier)
 **/data/cache/
+**/data/*.db
 *.xlsx
 *.csv
 !**/data/sample/*.csv

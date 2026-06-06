@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from src import store
+from src.analyste import analyser_avec_ia
 from src.api_client import ApiFootball
 from src.ligues_mise_o_jeu import IDS_SOCCER, LIGUES_SOCCER
 from src.pipeline import (
@@ -121,44 +122,61 @@ def analyses(
         return JSONResponse({"erreur": str(e)}, status_code=500)
 
 
+def _detail_match(api, fixture_id: int, stats_season: int | None = None) -> dict:
+    """Construit le détail complet d'un match (probas, value, conseil, équipes)."""
+    data = api.get("fixtures", {"id": fixture_id})
+    resp = data.get("response", [])
+    if not resp:
+        raise HTTPException(status_code=404, detail="Match introuvable")
+    f = resp[0]
+    fx = fixtures_depuis_reponse([f])[0]
+
+    res = analyser_fixture(api, fx, stats_season=stats_season)
+    if res:
+        res["conseil"] = conseil_de_paris(res.get("selections", []))
+    else:
+        res = analyser_fixture_sans_cotes(api, fx, stats_season=stats_season)
+        if not res:
+            raise HTTPException(status_code=422, detail="Données insuffisantes pour ce match")
+        res["selections"] = []
+        res["conseil"] = conseil_de_paris(
+            [{"marche": m["marche"], "proba": m["proba"], "value": 0}
+             for m in res.get("marches", [])]
+        )
+
+    res["date"] = f["fixture"]["date"]
+    res["home"] = {
+        "id": f["teams"]["home"]["id"],
+        "name": f["teams"]["home"]["name"],
+        "logo": f["teams"]["home"].get("logo"),
+    }
+    res["away"] = {
+        "id": f["teams"]["away"]["id"],
+        "name": f["teams"]["away"]["name"],
+        "logo": f["teams"]["away"].get("logo"),
+    }
+    return res
+
+
 @app.get("/api/match/{fixture_id}")
 def match_detail(fixture_id: int, stats_season: int | None = None):
-    """Analyse approfondie d'un match + conseil de paris."""
+    """Analyse approfondie d'un match + conseil de paris (statistique)."""
     try:
         api = ApiFootball()
-        data = api.get("fixtures", {"id": fixture_id})
-        resp = data.get("response", [])
-        if not resp:
-            raise HTTPException(status_code=404, detail="Match introuvable")
-        f = resp[0]
-        fx = fixtures_depuis_reponse([f])[0]
+        return JSONResponse(_detail_match(api, fixture_id, stats_season))
+    except HTTPException:
+        raise
+    except Exception as e:
+        return JSONResponse({"erreur": str(e)}, status_code=500)
 
-        # Analyse avec cotes (value + conseil) ; sinon repli sans cotes
-        res = analyser_fixture(api, fx, stats_season=stats_season)
-        if res:
-            res["conseil"] = conseil_de_paris(res.get("selections", []))
-        else:
-            res = analyser_fixture_sans_cotes(api, fx, stats_season=stats_season)
-            if not res:
-                raise HTTPException(status_code=422, detail="Données insuffisantes pour ce match")
-            res["selections"] = []
-            res["conseil"] = conseil_de_paris(
-                [{"marche": m["marche"], "proba": m["proba"], "value": 0}
-                 for m in res.get("marches", [])]
-            )
 
-        res["date"] = f["fixture"]["date"]
-        res["home"] = {
-            "id": f["teams"]["home"]["id"],
-            "name": f["teams"]["home"]["name"],
-            "logo": f["teams"]["home"].get("logo"),
-        }
-        res["away"] = {
-            "id": f["teams"]["away"]["id"],
-            "name": f["teams"]["away"]["name"],
-            "logo": f["teams"]["away"].get("logo"),
-        }
-        return JSONResponse(res)
+@app.get("/api/match/{fixture_id}/ia")
+def match_ia(fixture_id: int, stats_season: int | None = None):
+    """Analyse fine par le cerveau LLM (DeepSeek) — à la demande."""
+    try:
+        api = ApiFootball()
+        detail = _detail_match(api, fixture_id, stats_season)
+        return JSONResponse(analyser_avec_ia(api, detail))
     except HTTPException:
         raise
     except Exception as e:

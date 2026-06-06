@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import Icon from "../../components/Icon";
-import { MatchDetail, getMatch } from "../../lib/api";
+import { AnalyseIA, MatchDetail, getAnalyseIA, getMatch } from "../../lib/api";
 
 function Pastilles({ forme }: { forme: string }) {
   const couleur: Record<string, string> = {
@@ -30,6 +30,23 @@ export default function MatchPage() {
   const [m, setM] = useState<MatchDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [ia, setIa] = useState<AnalyseIA | null>(null);
+  const [iaLoading, setIaLoading] = useState(false);
+  const [iaErreur, setIaErreur] = useState<string | null>(null);
+
+  async function demanderIA() {
+    setIaLoading(true);
+    setIaErreur(null);
+    try {
+      const d = await getAnalyseIA(id);
+      if (d.erreur) setIaErreur(d.erreur);
+      else setIa(d);
+    } catch (e) {
+      setIaErreur(e instanceof Error ? e.message : "Erreur réseau");
+    } finally {
+      setIaLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -100,6 +117,133 @@ export default function MatchPage() {
               <p className="font-body-md text-body-md text-on-surface-variant">{m.conseil.raison}</p>
             </div>
           )}
+
+          {/* Analyse de l'expert IA (DeepSeek) */}
+          <div className="glass-card rounded-xl p-lg mb-lg">
+            <div className="flex items-center justify-between gap-md mb-md flex-wrap">
+              <div className="flex items-center gap-sm">
+                <div className="w-10 h-10 rounded-lg bg-secondary-container/30 flex items-center justify-center">
+                  <Icon name="neurology" className="text-secondary" />
+                </div>
+                <div>
+                  <div className="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant">
+                    Cerveau analyste
+                  </div>
+                  <div className="font-headline-sm text-headline-sm text-on-surface">
+                    Analyse de l&apos;expert IA
+                  </div>
+                </div>
+              </div>
+              {!ia && (
+                <button
+                  onClick={demanderIA}
+                  disabled={iaLoading}
+                  className="flex items-center gap-sm bg-secondary-container text-on-secondary-container font-label-md text-label-md px-lg py-sm rounded-lg hover:opacity-90 transition-all active:scale-95 disabled:opacity-50"
+                >
+                  {iaLoading ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-on-secondary-container border-t-transparent rounded-full animate-spin" />
+                      L&apos;expert analyse…
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="auto_awesome" style={{ fontSize: 18 }} />
+                      Demander l&apos;analyse
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+
+            {iaErreur && <p className="text-error font-body-md">Erreur : {iaErreur}</p>}
+
+            {!ia && !iaLoading && !iaErreur && (
+              <p className="font-body-md text-body-md text-on-surface-variant">
+                Lance une analyse approfondie : l&apos;IA croise les probabilités, la
+                forme, les blessures et l&apos;historique pour un avis nuancé (~20s).
+              </p>
+            )}
+
+            {iaLoading && (
+              <p className="font-body-md text-body-md text-on-surface-variant animate-pulse">
+                L&apos;expert IA étudie le dossier (probas, blessures, H2H)…
+              </p>
+            )}
+
+            {ia && (
+              <div className="flex flex-col gap-md">
+                <p className="font-body-lg text-body-lg text-on-surface">{ia.analyse}</p>
+
+                {ia.points_cles?.length > 0 && (
+                  <div>
+                    <div className="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant mb-xs">
+                      Points clés
+                    </div>
+                    <ul className="flex flex-col gap-xs">
+                      {ia.points_cles.map((p, i) => (
+                        <li key={i} className="flex items-start gap-sm font-body-md text-body-md text-on-surface">
+                          <Icon name="check_circle" className="text-primary mt-0.5" style={{ fontSize: 16 }} />
+                          <span>{p}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {ia.facteurs_risque?.length > 0 && (
+                  <div>
+                    <div className="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant mb-xs">
+                      Facteurs de risque
+                    </div>
+                    <ul className="flex flex-col gap-xs">
+                      {ia.facteurs_risque.map((p, i) => (
+                        <li key={i} className="flex items-start gap-sm font-body-md text-body-md text-on-surface">
+                          <Icon name="warning" className="text-tertiary mt-0.5" style={{ fontSize: 16 }} />
+                          <span>{p}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {ia.recommandation && (
+                  <div className="bg-secondary-container/20 border border-secondary/20 rounded-lg p-md">
+                    <div className="flex items-center justify-between mb-xs">
+                      <span className="font-headline-sm text-headline-sm text-secondary">
+                        {ia.recommandation.marche}
+                      </span>
+                      <span className="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant">
+                        confiance {ia.recommandation.confiance}
+                      </span>
+                    </div>
+                    <p className="font-body-md text-body-md text-on-surface-variant">
+                      {ia.recommandation.justification}
+                    </p>
+                  </div>
+                )}
+
+                {ia.nuance && (
+                  <div className="flex items-start gap-sm font-body-md text-body-md text-on-surface-variant">
+                    <Icon
+                      name={ia.accord_avec_modele ? "thumb_up" : "balance"}
+                      className={ia.accord_avec_modele ? "text-primary" : "text-tertiary"}
+                      style={{ fontSize: 16 }}
+                    />
+                    <span>
+                      {ia.accord_avec_modele === false && (
+                        <strong className="text-tertiary">Nuance vs modèle : </strong>
+                      )}
+                      {ia.nuance}
+                    </span>
+                  </div>
+                )}
+
+                <span className="font-label-sm text-label-sm text-on-surface-variant/60 self-end">
+                  Généré par {ia.modele}
+                </span>
+              </div>
+            )}
+          </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-lg">
             {/* Probabilités + forme */}

@@ -82,6 +82,24 @@ export async function getMatch(fixtureId: number): Promise<MatchDetail> {
   return r.json();
 }
 
+// ---- Analyse IA (cerveau DeepSeek) ----
+export type AnalyseIA = {
+  analyse: string;
+  points_cles: string[];
+  facteurs_risque: string[];
+  recommandation: { marche: string; confiance: string; justification: string } | null;
+  accord_avec_modele: boolean | null;
+  nuance: string;
+  modele: string;
+  erreur?: string;
+};
+
+export async function getAnalyseIA(fixtureId: number): Promise<AnalyseIA> {
+  const r = await fetch(`${API_URL}/api/match/${fixtureId}/ia`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
 export async function genererTickets(nb: number): Promise<Resultat> {
   const r = await fetch(`${API_URL}/api/generer?nb_tickets=${nb}`);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);

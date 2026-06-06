@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Analyse } from "../lib/api";
 import Icon from "./Icon";
 
@@ -24,15 +25,15 @@ function Pastilles({ forme }: { forme: string }) {
   );
 }
 
-export default function AnalyseMatch({ a }: { a: Analyse }) {
+export default function AnalyseMatch({ a, href }: { a: Analyse; href?: string }) {
   const [dom, ext] = a.match.split(" - ");
   const p1 = a.probabilites?.["1"] ?? 0;
   const pX = a.probabilites?.["X"] ?? 0;
   const p2 = a.probabilites?.["2"] ?? 0;
   const pct = (x: number) => `${Math.round(x * 100)}%`;
 
-  return (
-    <div className="glass-card p-lg rounded-xl flex flex-col gap-md">
+  const card = (
+    <div className="glass-card p-lg rounded-xl flex flex-col gap-md h-full">
       {/* Entête */}
       <div>
         <div className="font-label-sm text-label-sm text-on-surface-variant mb-xs">
@@ -52,9 +53,9 @@ export default function AnalyseMatch({ a }: { a: Analyse }) {
       {/* Barre 1X2 */}
       <div>
         <div className="flex h-2 rounded-full overflow-hidden bg-surface-container-highest">
-          <div className="bg-primary" style={{ width: pct(p1) }} title={`Domicile ${pct(p1)}`} />
-          <div className="bg-outline" style={{ width: pct(pX) }} title={`Nul ${pct(pX)}`} />
-          <div className="bg-secondary" style={{ width: pct(p2) }} title={`Extérieur ${pct(p2)}`} />
+          <div className="bg-primary" style={{ width: pct(p1) }} />
+          <div className="bg-outline" style={{ width: pct(pX) }} />
+          <div className="bg-secondary" style={{ width: pct(p2) }} />
         </div>
         <div className="flex justify-between mt-xs font-label-sm text-label-sm">
           <span className="text-primary">Dom. {pct(p1)}</span>
@@ -90,6 +91,22 @@ export default function AnalyseMatch({ a }: { a: Analyse }) {
           <Pastilles forme={a.forme.exterieur} />
         </div>
       </div>
+
+      {href && (
+        <div className="flex items-center justify-end gap-xs text-primary font-label-sm text-label-sm pt-xs mt-auto">
+          Analyse détaillée
+          <Icon name="arrow_forward" style={{ fontSize: 16 }} />
+        </div>
+      )}
     </div>
   );
+
+  if (href) {
+    return (
+      <Link href={href} className="block hover:-translate-y-1 transition-transform">
+        {card}
+      </Link>
+    );
+  }
+  return card;
 }

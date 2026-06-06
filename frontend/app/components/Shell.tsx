@@ -7,8 +7,9 @@ import Icon from "./Icon";
 const NAV = [
   { href: "/", label: "Accueil", icon: "home" },
   { href: "/generate", label: "Générer", icon: "bolt" },
-  { href: "/analytics", label: "Analytics", icon: "analytics" },
-  { href: "/history", label: "History", icon: "history" },
+  { href: "/analyses", label: "Analyses", icon: "insights" },
+  { href: "/analytics", label: "Performance", icon: "analytics" },
+  { href: "/history", label: "Historique", icon: "history" },
 ];
 
 const NAV_BIENTOT = [
@@ -32,9 +33,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </Link>
         </div>
         <div className="flex items-center gap-sm">
-          <button className="material-symbols-outlined p-sm rounded-full hover:bg-primary/10 text-on-surface-variant transition-colors active:scale-95">
-            account_balance_wallet
-          </button>
+          <span className="hidden sm:inline font-label-sm text-label-sm text-on-surface-variant mr-sm">
+            Conseils de paris · pas de mise ici
+          </span>
           <button className="material-symbols-outlined p-sm rounded-full hover:bg-primary/10 text-on-surface-variant transition-colors active:scale-95">
             notifications
           </button>
@@ -76,16 +77,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         <div className="mt-auto flex flex-col gap-xs border-t border-white/5 pt-md">
-          <button className="bg-primary text-on-primary font-bold py-md rounded-xl hover:opacity-90 transition-opacity active:scale-95 mb-md">
-            Deposit Now
-          </button>
           <span className="flex items-center gap-md px-md py-sm text-on-surface-variant/60">
             <Icon name="settings" />
-            <span className="font-label-md text-label-md">Settings</span>
+            <span className="font-label-md text-label-md">Réglages</span>
           </span>
           <span className="flex items-center gap-md px-md py-sm text-on-surface-variant/60">
             <Icon name="help_center" />
-            <span className="font-label-md text-label-md">Support</span>
+            <span className="font-label-md text-label-md">Aide</span>
           </span>
         </div>
       </aside>

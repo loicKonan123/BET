@@ -36,6 +36,52 @@ export type Resultat = {
   erreur?: string;
 };
 
+// ---- Analyses (liste) ----
+export async function getAnalyses(): Promise<{
+  dates_scannees: string[];
+  nb: number;
+  analyses: Analyse[];
+  erreur?: string;
+}> {
+  const r = await fetch(`${API_URL}/api/analyses`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+// ---- Détail d'un match ----
+export type MarketSelection = {
+  cle: string;
+  marche: string;
+  proba: number;
+  cote: number;
+  proba_implicite: number;
+  value: number;
+  est_value_bet: boolean;
+};
+
+export type Conseil = {
+  marche: string;
+  proba: number;
+  cote: number | null;
+  value: number;
+  raison: string;
+};
+
+export type MatchDetail = Analyse & {
+  date: string;
+  home: { id: number; name: string; logo?: string };
+  away: { id: number; name: string; logo?: string };
+  selections: MarketSelection[];
+  conseil: Conseil | null;
+  erreur?: string;
+};
+
+export async function getMatch(fixtureId: number): Promise<MatchDetail> {
+  const r = await fetch(`${API_URL}/api/match/${fixtureId}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
 export async function genererTickets(nb: number): Promise<Resultat> {
   const r = await fetch(`${API_URL}/api/generer?nb_tickets=${nb}`);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);

@@ -1,8 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import Icon from "../components/Icon";
-import AnalyseMatch from "../components/AnalyseMatch";
 import { Combine, Resultat, genererTickets, sauverTicket } from "../lib/api";
 
 export default function Generate() {
@@ -193,17 +193,16 @@ export default function Generate() {
       )}
 
       {res && res.analyses.length > 0 && (
-        <div className="mb-lg">
-          <h2 className="font-headline-sm text-headline-sm text-on-surface mb-md flex items-center gap-sm">
+        <Link
+          href="/analyses"
+          className="glass-card rounded-xl p-lg flex items-center justify-between hover:border-primary/30 transition-colors"
+        >
+          <span className="flex items-center gap-sm font-label-md text-label-md text-on-surface">
             <Icon name="insights" className="text-tertiary" />
-            Analyse des matchs
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-lg">
-            {res.analyses.map((a) => (
-              <AnalyseMatch key={a.fixture_id} a={a} />
-            ))}
-          </div>
-        </div>
+            Voir l&apos;analyse détaillée des {res.analyses.length} matchs
+          </span>
+          <Icon name="arrow_forward" className="text-primary" />
+        </Link>
       )}
     </>
   );

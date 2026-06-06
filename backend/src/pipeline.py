@@ -184,7 +184,40 @@ def analyser_fixture_sans_cotes(
         "fixture_id": fx.fixture_id,
         "buts_attendus": {"domicile": round(lam_dom, 2), "exterieur": round(lam_ext, 2)},
         "forme": {"domicile": dom.forme[-5:], "exterieur": ext.forme[-5:]},
+        "probabilites": {k: round(v, 4) for k, v in probas.items()},
         "marches": marches,
+    }
+
+
+def conseil_de_paris(selections: list[dict]) -> dict | None:
+    """Choisit le meilleur pari à conseiller parmi les sélections analysées.
+
+    Priorité : un value bet (value > 0) assez sûr (proba >= 0.5).
+    Sinon le meilleur value bet. Sinon la sélection la plus probable.
+    Renvoie {marche, proba, cote, value, raison} ou None si pas de sélection.
+    """
+    if not selections:
+        return None
+
+    values = [s for s in selections if s.get("value", 0) > 0]
+    surs = [s for s in values if s.get("proba", 0) >= 0.5]
+
+    if surs:
+        choix = max(surs, key=lambda s: s["proba"])
+        raison = "Value bet fiable : forte probabilité ET cote sous-évaluée."
+    elif values:
+        choix = max(values, key=lambda s: s["value"])
+        raison = "Meilleure value détectée du match (cote sous-évaluée)."
+    else:
+        choix = max(selections, key=lambda s: s["proba"])
+        raison = "Pas de value claire — sélection la plus probable du match."
+
+    return {
+        "marche": choix["marche"],
+        "proba": choix["proba"],
+        "cote": choix.get("cote"),
+        "value": choix.get("value", 0),
+        "raison": raison,
     }
 
 

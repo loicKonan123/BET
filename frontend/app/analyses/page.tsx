@@ -9,6 +9,7 @@ export default function Analyses() {
   const [analyses, setAnalyses] = useState<Analyse[]>([]);
   const [loading, setLoading] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [filtre, setFiltre] = useState<string>("Toutes");
 
   useEffect(() => {
     getAnalyses()
@@ -54,10 +55,46 @@ export default function Analyses() {
         </div>
       )}
 
+      {/* Filtre par compétition */}
+      {analyses.length > 0 &&
+        (() => {
+          const compteur = analyses.reduce<Record<string, number>>((acc, a) => {
+            acc[a.ligue] = (acc[a.ligue] ?? 0) + 1;
+            return acc;
+          }, {});
+          const ligues = Object.keys(compteur).sort();
+          const onglets = [
+            { nom: "Toutes", n: analyses.length },
+            ...ligues.map((l) => ({ nom: l, n: compteur[l] })),
+          ];
+          return (
+            <div className="flex flex-wrap gap-sm mb-lg">
+              {onglets.map((o) => {
+                const actif = filtre === o.nom;
+                return (
+                  <button
+                    key={o.nom}
+                    onClick={() => setFiltre(o.nom)}
+                    className={`px-md py-xs rounded-full font-label-sm text-label-sm transition-all border ${
+                      actif
+                        ? "bg-secondary-container text-on-secondary-container border-transparent"
+                        : "bg-white/5 text-on-surface-variant border-white/10 hover:border-primary/30"
+                    }`}
+                  >
+                    {o.nom} <span className="opacity-60">({o.n})</span>
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })()}
+
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-lg">
-        {analyses.map((a) => (
-          <AnalyseMatch key={a.fixture_id} a={a} href={`/match/${a.fixture_id}`} />
-        ))}
+        {analyses
+          .filter((a) => filtre === "Toutes" || a.ligue === filtre)
+          .map((a) => (
+            <AnalyseMatch key={a.fixture_id} a={a} href={`/match/${a.fixture_id}`} />
+          ))}
       </div>
     </>
   );

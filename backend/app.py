@@ -21,8 +21,8 @@ from src.pipeline import fixtures_depuis_reponse, generer_pronostics
 
 app = FastAPI(title="BET — Générateur de tickets")
 
-# app.py est dans backend/ ; le frontend web/ est à la racine du projet
-WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+# app.py est dans backend/ ; le frontend est à la racine du projet
+WEB_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
 
 @app.get("/")
@@ -36,19 +36,23 @@ def ligues():
     return [{"id": lid, "nom": nom} for lid, nom in LIGUES_SOCCER.items()]
 
 
-def _fenetre_dates(rayon: int = 1) -> list[str]:
-    """Dates accessibles : aujourd'hui ± rayon (le plan gratuit limite à J±1)."""
+def _fenetre_dates(jours_avant: int = 7) -> list[str]:
+    """Dates à scanner : aujourd'hui + les `jours_avant` prochains jours.
+
+    (Le plan PRO retire la limite J±1 du plan gratuit.)
+    """
     today = date.today()
-    return [(today + timedelta(days=i)).isoformat() for i in range(-rayon, rayon + 1)]
+    return [(today + timedelta(days=i)).isoformat() for i in range(0, jours_avant + 1)]
 
 
 @app.get("/api/generer")
 def generer(
     nb_tickets: int = 3,
     cote_cible: float = 3.0,
-    stats_season: int = 2024,   # plan gratuit ; saison courante avec une clé prod
-    max_matchs: int = 12,
-    valider: int = 1,           # 1 = liste blanche Mise-o-jeu ; 0 = tous (démo hors-saison)
+    stats_season: int | None = None,  # None = saison réelle de chaque match (PRO)
+    max_matchs: int = 30,
+    valider: int = 1,           # 1 = liste blanche Mise-o-jeu ; 0 = tous
+    jours: int = 7,             # nombre de jours à venir à scanner
 ):
     """Scan AUTOMATIQUE : parcourt tous les matchs des championnats Mise-o-jeu
     sur toutes les dates accessibles, et génère les tickets. Aucun choix manuel.
@@ -59,7 +63,7 @@ def generer(
 
         fixtures = []
         dates_ok = []
-        for d in _fenetre_dates():
+        for d in _fenetre_dates(jours):
             try:
                 data = api.get("fixtures", {"date": d})
             except Exception:

@@ -120,13 +120,13 @@ def parser_stats_national(fixtures: list, team_id: int) -> StatsEquipe | None:
     )
 
 
-def recuperer_stats_national(api: ApiFootball, team: int, season: int = 2023) -> StatsEquipe | None:
-    """Appelle l'API (1 requête) : matchs d'une saison d'une sélection -> StatsEquipe.
+def recuperer_stats_national(api: ApiFootball, team: int, derniers: int = 20) -> StatsEquipe | None:
+    """Appelle l'API (1 requête) : N derniers matchs d'une sélection -> StatsEquipe.
 
-    season : plan gratuit limité à 2022-2024. Avec une clé prod, mettre la
-    saison courante pour une forme à jour.
+    Le paramètre `last` est réservé aux plans payants (PRO). Donne la forme
+    internationale la plus à jour (qualifs, Nations League, amicaux).
     """
-    data = api.get("fixtures", {"team": team, "season": season})
+    data = api.get("fixtures", {"team": team, "last": derniers})
     return parser_stats_national(data.get("response", []), team)
 
 

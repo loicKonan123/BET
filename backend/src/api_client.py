@@ -64,7 +64,7 @@ class ApiFootball:
             raise RuntimeError(f"Erreur API : {data['errors']}")
 
         cache_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        time.sleep(7)  # plan gratuit = 10 req/min -> ~9/min pour rester sous la limite
+        time.sleep(0.3)  # plan PRO ~300 req/min -> ~200/min, marge confortable
         return data
 
     def status(self) -> dict:

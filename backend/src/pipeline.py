@@ -37,7 +37,7 @@ LIGUES_NATIONALES = {
 def _stats_equipe(api, league, season, team_id, mode):
     """Récupère les stats d'une équipe selon le mode (club ou national)."""
     if mode == "national":
-        return recuperer_stats_national(api, team_id, season=season)
+        return recuperer_stats_national(api, team_id)
     return recuperer_stats(api, league, season, team_id)
 
 

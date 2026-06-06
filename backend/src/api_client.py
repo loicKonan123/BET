@@ -11,10 +11,12 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
-load_dotenv()
+# Charge backend/.env quel que soit le répertoire de lancement
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BACKEND_DIR / ".env")
 
 BASE_URL = "https://v3.football.api-sports.io"
-CACHE_DIR = Path(__file__).resolve().parent.parent / "data" / "cache"
+CACHE_DIR = BACKEND_DIR / "data" / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 

@@ -21,7 +21,8 @@ from src.pipeline import fixtures_depuis_reponse, generer_pronostics
 
 app = FastAPI(title="BET — Générateur de tickets")
 
-WEB_DIR = Path(__file__).resolve().parent / "web"
+# app.py est dans backend/ ; le frontend web/ est à la racine du projet
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
 
 @app.get("/")

@@ -7,11 +7,11 @@ __pycache__/
 .venv/
 venv/
 
-# Données / cache
-data/cache/
+# Données / cache (peu importe le dossier)
+**/data/cache/
 *.xlsx
 *.csv
-!data/sample/*.csv
+!**/data/sample/*.csv
 
 # Sorties générées
 resultats.json

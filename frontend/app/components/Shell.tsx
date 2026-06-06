@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import Icon from "./Icon";
 
 const NAV = [
-  { href: "/", label: "Ticket Gen", icon: "confirmation_number" },
+  { href: "/", label: "Accueil", icon: "home" },
+  { href: "/generate", label: "Générer", icon: "bolt" },
   { href: "/analytics", label: "Analytics", icon: "analytics" },
   { href: "/history", label: "History", icon: "history" },
 ];
@@ -23,9 +24,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       {/* Barre supérieure */}
       <header className="fixed top-0 w-full z-50 bg-surface/60 backdrop-blur-xl border-b border-white/10 flex justify-between items-center px-margin-mobile md:px-margin-desktop h-16">
         <div className="flex items-center gap-md">
-          <span className="font-display-lg text-display-lg font-black tracking-tighter text-primary">
-            BET
-          </span>
+          <Link
+            href="/"
+            className="font-display-lg text-headline-lg font-black tracking-tighter text-primary"
+          >
+            EDGE
+          </Link>
         </div>
         <div className="flex items-center gap-sm">
           <button className="material-symbols-outlined p-sm rounded-full hover:bg-primary/10 text-on-surface-variant transition-colors active:scale-95">

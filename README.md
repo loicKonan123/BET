@@ -1,4 +1,4 @@
-# BET — Générateur de tickets (Mise-o-jeu)
+# EDGE — Find the Value (Mise-o-jeu)
 
 Outil d'analyse statistique de paris sportifs (football). Il scanne
 automatiquement les matchs des championnats offerts par Mise-o-jeu,

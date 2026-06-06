@@ -16,8 +16,8 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "BET — Générateur de tickets",
-  description: "Analyse statistique de paris sportifs (Poisson + value) pour Mise-o-jeu",
+  title: "EDGE — Find the Value",
+  description: "Intelligence de paris sportifs : value bets générés par analyse statistique (Poisson) pour Mise-o-jeu",
 };
 
 export default function RootLayout({

@@ -1,0 +1,21 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Données / cache
+data/cache/
+*.xlsx
+*.csv
+!data/sample/*.csv
+
+# Sorties générées
+resultats.json
+
+# IDE
+.vscode/
+.idea/

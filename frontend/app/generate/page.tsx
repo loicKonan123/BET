@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Icon from "../components/Icon";
+import AnalyseMatch from "../components/AnalyseMatch";
 import { Combine, Resultat, genererTickets, sauverTicket } from "../lib/api";
 
 export default function Generate() {
@@ -197,20 +198,9 @@ export default function Generate() {
             <Icon name="insights" className="text-tertiary" />
             Analyse des matchs
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-md">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-lg">
             {res.analyses.map((a) => (
-              <div key={a.fixture_id} className="glass-card p-md rounded-lg">
-                <div className="font-label-sm text-label-sm text-on-surface-variant mb-xs">🏆 {a.ligue}</div>
-                <div className="font-body-md text-body-md text-on-surface mb-sm">{a.match}</div>
-                <div className="flex justify-between font-label-sm text-label-sm">
-                  <span className="text-on-surface-variant">
-                    Buts att. <span className="text-primary">{a.buts_attendus.domicile} - {a.buts_attendus.exterieur}</span>
-                  </span>
-                  <span className="text-on-surface-variant">
-                    Forme <span className="text-secondary">{a.forme.domicile}/{a.forme.exterieur}</span>
-                  </span>
-                </div>
-              </div>
+              <AnalyseMatch key={a.fixture_id} a={a} />
             ))}
           </div>
         </div>

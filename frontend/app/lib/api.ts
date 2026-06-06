@@ -23,6 +23,7 @@ export type Analyse = {
   fixture_id: number;
   buts_attendus: { domicile: number; exterieur: number };
   forme: { domicile: string; exterieur: string };
+  probabilites: Record<string, number>;
 };
 
 export type Resultat = {

@@ -254,10 +254,11 @@ export default function MatchPage() {
                   </div>
                 )}
 
-                <span className="font-label-sm text-label-sm text-on-surface-variant/60 self-end">
-                  Généré par {ia.modele}
-                  {ia.cache ? " · depuis le cache" : ""}
-                </span>
+                {ia.cache && (
+                  <span className="font-label-sm text-label-sm text-on-surface-variant/60 self-end">
+                    Depuis le cache
+                  </span>
+                )}
               </div>
             )}
           </div>

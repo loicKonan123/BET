@@ -60,11 +60,28 @@ def _h2h(api: ApiFootball, home_id: int, away_id: int, n: int = 5) -> list[str]:
     return out
 
 
+def _rangs_equipes(classement: dict | None, home_id: int, away_id: int) -> dict | None:
+    """Extrait le rang/points/forme des 2 équipes depuis le classement groupé."""
+    if not classement:
+        return None
+    out = {}
+    for groupe in classement.get("groupes", []):
+        for l in groupe.get("lignes", []):
+            if l.get("equipe_id") == home_id:
+                out["domicile"] = {"rang": l.get("rang"), "points": l.get("points"),
+                                   "joues": l.get("joues"), "forme": l.get("forme")}
+            elif l.get("equipe_id") == away_id:
+                out["exterieur"] = {"rang": l.get("rang"), "points": l.get("points"),
+                                    "joues": l.get("joues"), "forme": l.get("forme")}
+    return out or None
+
+
 def collecter_dossier(api: ApiFootball, detail: dict) -> dict:
     """Assemble le dossier de faits à partir du détail du match + données qualitatives."""
     home = detail["home"]
     away = detail["away"]
     fixture_id = detail["fixture_id"]
+    pred = detail.get("prediction_api") or {}
     return {
         "match": detail["match"],
         "competition": detail.get("ligue"),
@@ -78,6 +95,11 @@ def collecter_dossier(api: ApiFootball, detail: dict) -> dict:
             for s in detail.get("selections", [])
         ],
         "conseil_du_modele": detail.get("conseil"),
+        "classement": _rangs_equipes(detail.get("classement"), home["id"], away["id"]),
+        "pronostic_api_football": {
+            "conseil": pred.get("conseil"),
+            "pourcentages": pred.get("pourcentages"),
+        } if pred else None,
         "blessures": _blessures(api, fixture_id, home["id"], away["id"]),
         "confrontations_directes": _h2h(api, home["id"], away["id"]),
     }
@@ -87,10 +109,13 @@ _SYSTEME = (
     "Tu es un analyste expert en paris sportifs football. On te fournit un dossier "
     "factuel : des probabilités déjà calculées par un modèle statistique (loi de "
     "Poisson) — que tu dois considérer comme FIABLES et NE PAS recalculer — ainsi "
-    "que des données de contexte (forme, blessures, confrontations directes, cotes). "
+    "que des données de contexte : forme, blessures/suspensions, confrontations "
+    "directes, cotes, classement (position, points, enjeu : titre/maintien/relégation) "
+    "et le pronostic d'un autre modèle (API-Football) pour recoupement. "
     "Ton rôle : raisonner par-dessus ces faits pour produire une analyse fine, "
-    "repérer ce que les chiffres seuls ratent (absences clés, enjeu, déséquilibres), "
-    "et donner un conseil nuancé. Réponds en français."
+    "repérer ce que les chiffres seuls ratent (absences clés, enjeu, écart de niveau "
+    "au classement, désaccord entre modèles), et donner un conseil nuancé. "
+    "Réponds en français."
 )
 
 _INSTRUCTION = """À partir du dossier JSON ci-dessous, rends UNIQUEMENT un objet JSON

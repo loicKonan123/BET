@@ -1,67 +1,82 @@
-# Plan / Feuille de route — BET
+# Plan / Feuille de route — EDGE
 
 Légende : ✅ fait · 🔄 en cours · ⬜ à faire
 
-## Phase 1 — Moteur (MVP) ✅
+EDGE = plateforme de **conseil/analyse** de paris pour Mise-o-jeu (Loto-Québec).
+On ne parie pas dans l'app : on analyse, on conseille, on suit la performance.
 
-- ✅ Client API-Football + cache disque + anti rate-limit (429)
-- ✅ Moteur Poisson (1X2, Over/Under 2.5, BTTS, double chance)
-- ✅ Stats équipes → buts attendus (mode club)
-- ✅ Détection des value bets + génération des combinés (cote ~3.00)
-- ✅ Liste blanche Mise-o-jeu comme **validateur** (matchs jouables uniquement)
-- ✅ Scan **automatique** multi-dates (un seul bouton, zéro choix manuel)
-- ✅ Mode **équipes nationales** (Coupe du Monde, Euro… via matchs internationaux)
-- ✅ Interface web (FastAPI + HTML)
-- ✅ Réorganisation `backend/` + `frontend/` + `docs/`
-- ✅ Projet sur GitHub (clé `.env` protégée)
+---
 
-## Phase 2 — Cotes réalistes 🔄
+## ✅ Déjà fait
 
-- 🔄 Cotes : consensus + **Pinnacle** (le plus précis) → **estimation Mise-o-jeu**
-  (base Pinnacle/consensus rabaissée de la marge ~4,5 %)
-- ⬜ Afficher dans l'interface : cote estimée Mise-o-jeu + cote consensus (référence)
-- ⬜ Seuil de value ajusté à la marge Mise-o-jeu
+### Moteur (statistique, auditable)
+- ✅ Client API-Football (**PRO**) + cache disque + anti rate-limit
+- ✅ Moteur **Poisson** (1X2, Over/Under 2.5, BTTS, double chance)
+- ✅ Stats équipes → buts attendus — mode **club** ET mode **équipes nationales** (CDM)
+- ✅ Détection des **value bets** + génération de **combinés** (cote ~3.00)
+- ✅ **Validateur Mise-o-jeu** (liste blanche) → jamais de match injouable
+- ✅ Scan **automatique** multi-dates (un seul bouton)
+- ✅ Cotes consensus (~13 bookmakers, dont Pinnacle)
 
-## Phase 3 — Passage en prod (clé PRO 19 $) ⬜
+### Application (Next.js + FastAPI)
+- ✅ App **EDGE** « Find the Value » — design Apex Velocity (glassmorphism)
+- ✅ Pages : Accueil (hero + snapshot) · Générer · Analyses · Performance · Historique
+- ✅ Page **match détaillée** : conseil de paris, barre 1X2, forme, tous les marchés
+- ✅ **Classement par groupe** (CDM = groupes séparés) avec les 2 équipes surlignées
+- ✅ **Pronostic croisé** : nos probas EDGE vs API-Football
+- ✅ **Heures en heure de l'Est (Canada / Québec)**
+- ✅ Persistance des **tickets** (SQLite) + suivi gagné/perdu manuel
+- ✅ **Analytics** : ROI, taux de réussite, profit
 
-- ⬜ Nouvelle clé dans `.env`
-- ⬜ `stats_season` = saison courante
-- ⬜ Élargir la fenêtre de dates (semaine entière)
-- ⬜ Cotes en direct + forme à jour
-- ⬜ Coupe du Monde 2026 (à partir du 11 juin)
+### Cerveau IA (DeepSeek)
+- ✅ Analyste **DeepSeek (reasoner)** : raisonne sur un dossier (Poisson + forme +
+  blessures + H2H + classement + pronostic API) → analyse fine + conseil nuancé
+- ✅ **Cache permanent** des analyses IA + bouton « Rafraîchir »
+- ✅ Règle absolue : le LLM **ne calcule jamais** les probas (Poisson = vérité)
 
-## Phase 4 — Backtest (CRUCIAL avant de vendre) ⬜
+---
 
-- ⬜ Rejouer le modèle sur 2022-2024 (stats accessibles)
-- ⬜ Mesurer ROI / yield / taux de réussite des combinés
-- ⬜ Valider que le modèle bat la clôture du marché
-- ⬜ Ne vendre aux clients que si rentable sur 1000+ matchs
+## ⬜ Prochaines pistes (par valeur)
 
-## Phase 5 — Application produit ⬜
+| Piste | Valeur | Effort | Statut |
+|-------|--------|--------|--------|
+| 🎯 **Backtest** — rejouer le modèle sur les saisons passées, mesurer le ROI réel | ⭐⭐⭐ *décisif avant de vendre* | élevé | ⬜ |
+| ✅ **Vérif. auto des résultats** — actualiser un ticket et voir tout seul s'il a gagné | ⭐⭐⭐ | moyen | ⬜ |
+| 🌗 **Light mode** — thème clair en plus du sombre (toggle) | ⭐⭐ | faible | ⬜ |
+| 🤖 **IA sur les combinés** — analyse globale d'un ticket entier | ⭐⭐ | moyen | ⬜ |
+| 📊 **Page Équipe dédiée** — historique complet + stats d'une équipe | ⭐⭐ | moyen | ⬜ |
+| 🩹 **Blessures + H2H affichés** sur la page match (déjà récupérés pour le LLM) | ⭐ | faible | ⬜ |
 
-- ⬜ Backend FastAPI complet (endpoints, comptes, historique)
-- ⬜ Base PostgreSQL (matchs, cotes, tickets, résultats, bankroll)
-- ⬜ Frontend Next.js (dashboard, suivi ROI, historique vérifiable)
-- ⬜ Modèle d'abonnement (freemium / mensuel)
+### 🎯 Backtest (LA priorité)
+- ⬜ Rejouer le modèle sur les saisons passées (matchs terminés)
+- ⬜ Comparer la prédiction au résultat réel
+- ⬜ Mesurer **ROI / yield / taux de réussite** des combinés
+- ⬜ Vérifier que le modèle bat la clôture du marché
+- ⬜ Ne vendre aux clients QUE si rentable sur 1000+ matchs
+
+### ✅ Vérification automatique des résultats (auto-settlement)
+- ⬜ Pour chaque ticket sauvegardé, récupérer le **résultat réel** des matchs (API-Football)
+- ⬜ **Grader** chaque sélection (gagnée / perdue) selon le marché (1X2, O/U, BTTS, DC)
+- ⬜ Marquer le ticket **gagné/perdu automatiquement** (combiné = toutes gagnantes)
+- ⬜ Bouton « Actualiser les résultats » + statut « en attente » tant que le match n'est pas joué
+- ⬜ Alimente l'Analytics (ROI réel) sans saisie manuelle
+
+### 🌗 Light mode
+- ⬜ Thème clair (variables de couleur alternatives)
+- ⬜ Toggle dans la barre du haut, préférence mémorisée (localStorage)
+
+---
+
+## Phase produit (plus tard)
+- ⬜ Comptes utilisateurs + abonnement (freemium / mensuel)
+- ⬜ Migration SQLite → PostgreSQL
 - ⬜ Gestion de bankroll (critère de Kelly fractionnel)
-
-## Phase 6 — Couche IA (LLM) ⬜
-
-- ⬜ Le LLM lit la sortie JSON du moteur et **explique** chaque pari
-  en langage naturel (le calcul reste statistique, l'IA habille)
-- ⬜ Génération de résumés / justifications pour les clients
-
-## Phase 7 — Lancement ⬜
-
-- ⬜ Jeu responsable (avertissements, limites)
-- ⬜ Conformité légale (Québec / Loto-Québec)
-- ⬜ Transparence : historique public des paris (gagnés ET perdus)
-- ⬜ Acquisition des premiers clients
+- ⬜ Jeu responsable + conformité (Québec / Loto-Québec)
+- ⬜ Historique public vérifiable (gagnés ET perdus) pour la confiance
 
 ---
 
 ## Règle d'or
-
-Un combiné cote 3.00 ≈ 33 % de proba théorique. L'avantage ne vient pas
-de « prédire le gagnant » mais de trouver les **erreurs de cote** (value).
+Un combiné cote 3.00 ≈ 33 % de proba théorique. L'avantage ne vient pas de
+« prédire le gagnant » mais de trouver les **erreurs de cote** (value).
 **Prouver la rentabilité en backtest avant de vendre quoi que ce soit.**

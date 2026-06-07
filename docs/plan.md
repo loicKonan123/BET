@@ -45,6 +45,7 @@ On ne parie pas dans l'app : on analyse, on conseille, on suit la performance.
 | 🤖 **IA sur les combinés** — analyse globale d'un ticket entier | ⭐⭐ | moyen | ⬜ |
 | 📊 **Page Équipe dédiée** — historique complet + stats d'une équipe | ⭐⭐ | moyen | ⬜ |
 | 🩹 **Blessures + H2H affichés** sur la page match (déjà récupérés pour le LLM) | ⭐ | faible | ⬜ |
+| 🎨 **Refonte design** — nouvelle page d'accueil + logo SVG + animations | ⭐⭐ | moyen | ⬜ |
 | 🔬 **Étude avancée** — analyse approfondie d'un championnat / équipe / joueur | ⭐⭐⭐ *futur* | élevé | ⬜ |
 
 ### 🎯 Backtest (LA priorité)
@@ -64,6 +65,16 @@ On ne parie pas dans l'app : on analyse, on conseille, on suit la performance.
 ### 🌗 Light mode ✅
 - ✅ Thème clair (variables de couleur alternatives)
 - ✅ Toggle dans la barre du haut, préférence mémorisée (localStorage)
+
+### 🎨 Refonte design (identité & accueil)
+Donner à EDGE une vraie identité visuelle premium.
+
+- ⬜ **Refaire la page d'accueil** : hero plus impactant, mise en avant des
+  fonctionnalités, preuves (snapshot ROI), call-to-action soignés
+- ⬜ **Logo SVG personnalisé** (remplacer le simple texte « EDGE ») —
+  déclinable favicon + thème clair/sombre
+- ⬜ **Animations** : apparition des tickets/cartes (stagger), transitions de
+  page, micro-interactions au survol, compteurs animés (ROI, %)
 
 ### 🔬 Étude avancée (fonctionnalité future)
 Module de recherche poussée, au-delà du match unique — un vrai outil d'analyste.

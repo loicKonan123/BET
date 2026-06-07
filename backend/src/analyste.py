@@ -22,7 +22,8 @@ def _client() -> OpenAI:
     key = os.getenv("DEEPSEEK_API_KEY")
     if not key:
         raise RuntimeError("DEEPSEEK_API_KEY manquante (vérifie backend/.env)")
-    return OpenAI(api_key=key, base_url=BASE_URL)
+    # timeout large : le raisonneur (R1) peut réfléchir 1-2 min, on le laisse finir
+    return OpenAI(api_key=key, base_url=BASE_URL, timeout=300.0, max_retries=1)
 
 
 def _blessures(api: ApiFootball, fixture_id: int, home_id: int, away_id: int) -> dict:
@@ -188,7 +189,7 @@ def analyser_avec_ia(api: ApiFootball, detail: dict) -> dict:
             {"role": "system", "content": _SYSTEME},
             {"role": "user", "content": _INSTRUCTION + json.dumps(dossier, ensure_ascii=False, indent=2)},
         ],
-        max_tokens=1500,
+        max_tokens=8000,  # large : le modèle va au bout sans être coupé
     )
     contenu = resp.choices[0].message.content or ""
     resultat = _extraire_json(contenu)

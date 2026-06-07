@@ -28,7 +28,7 @@ export default function Analyses() {
           Analyses des matchs
         </h1>
         <p className="font-body-lg text-on-surface-variant">
-          Tous les matchs jouables sur Mise-o-jeu. Clique sur un match pour
+          Tous les matchs analysés. Clique sur un match pour
           l&apos;analyse détaillée et notre conseil de paris.
         </p>
       </div>

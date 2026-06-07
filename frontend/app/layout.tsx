@@ -17,7 +17,7 @@ const jetbrains = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "EDGE — Find the Value",
-  description: "Intelligence de paris sportifs : value bets générés par analyse statistique (Poisson) pour Mise-o-jeu",
+  description: "Intelligence de paris sportifs : value bets générés par analyse statistique (Poisson)",
 };
 
 export default function RootLayout({

@@ -26,9 +26,9 @@ export default function Home() {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
               <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
             </span>
-            <span className="font-label-sm text-label-sm uppercase tracking-widest text-primary">
+            {/* <span className="font-label-sm text-label-sm uppercase tracking-widest text-primary">
               Moteur statistique actif
-            </span>
+            </span> */}
           </div>
 
           <h1 className="font-display-lg text-display-lg font-black tracking-tighter mb-md">
@@ -38,9 +38,8 @@ export default function Home() {
 
           <p className="font-body-lg text-on-surface-variant max-w-2xl mb-xl">
             Ton avantage statistique sur le bookmaker. EDGE scanne automatiquement
-            les matchs jouables sur Mise-o-jeu, calcule les probabilités par loi de
-            Poisson et génère les combinés à plus forte value. Zéro intuition, que
-            des maths.
+            les matchs, calcule les probabilités par loi de Poisson et génère les
+            combinés à plus forte value. Zéro intuition, que des maths.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-md">
@@ -103,8 +102,8 @@ export default function Home() {
         />
         <Feature
           icon="verified"
-          titre="Jouable sur Mise-o-jeu"
-          texte="Un validateur ne garde que les championnats réellement offerts par Mise-o-jeu. Chaque ticket généré est jouable chez Loto-Québec."
+          titre="Championnats sélectionnés"
+          texte="Un validateur ne garde que les grands championnats couverts. Chaque ticket généré est jouable chez les bookmakers."
         />
         <Feature
           icon="query_stats"

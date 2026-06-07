@@ -45,7 +45,7 @@ export default function Generate() {
           Générer des tickets
         </h1>
         <p className="font-body-lg text-on-surface-variant">
-          Scan automatique des matchs jouables sur Mise-o-jeu — value bets calculés
+          Scan automatique des matchs — value bets calculés
           par loi de Poisson.
         </p>
       </div>
@@ -187,7 +187,7 @@ export default function Generate() {
 
       {res && res.combines.length === 0 && (
         <div className="glass-card p-lg rounded-xl text-on-surface-variant">
-          Aucun ticket pour le moment — aucun match jouable sur Mise-o-jeu dans la
+          Aucun ticket pour le moment — aucun match disponible dans la
           fenêtre, ou cotes/stats indisponibles.
         </div>
       )}

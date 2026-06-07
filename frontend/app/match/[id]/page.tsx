@@ -360,7 +360,7 @@ export default function MatchPage() {
 
           <p className="font-label-sm text-label-sm text-on-surface-variant mt-xl">
             ⚠️ EDGE fournit une analyse et un conseil statistique — pas une certitude.
-            Le pari se place sur Mise-o-jeu. Jouez de manière responsable.
+            Jouez de manière responsable.
           </p>
         </>
       )}

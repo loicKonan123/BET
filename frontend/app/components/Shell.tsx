@@ -13,11 +13,6 @@ const NAV = [
   { href: "/history", label: "Historique", icon: "history" },
 ];
 
-const NAV_BIENTOT = [
-  { label: "Markets", icon: "query_stats" },
-  { label: "Live Betting", icon: "sensors" },
-];
-
 export default function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
 
@@ -34,9 +29,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </Link>
         </div>
         <div className="flex items-center gap-sm">
-          <span className="hidden sm:inline font-label-sm text-label-sm text-on-surface-variant mr-sm">
-            Conseils de paris · pas de mise ici
-          </span>
           <ThemeToggle />
           <button className="material-symbols-outlined p-sm rounded-full hover:bg-primary/10 text-on-surface-variant transition-colors active:scale-95">
             notifications
@@ -50,16 +42,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       {/* Sidebar desktop */}
       <aside className="fixed left-0 top-16 h-[calc(100vh-64px)] w-64 hidden md:flex flex-col py-lg px-md gap-sm bg-surface-container-lowest/80 backdrop-blur-2xl border-r border-white/10">
         <nav className="flex-1 flex flex-col gap-xs">
-          {NAV_BIENTOT.map((it) => (
-            <span
-              key={it.label}
-              title="Bientôt"
-              className="flex items-center gap-md p-md text-on-surface-variant/40 rounded-lg cursor-not-allowed select-none"
-            >
-              <Icon name={it.icon} />
-              <span className="font-label-md text-label-md">{it.label}</span>
-            </span>
-          ))}
           {NAV.map((it) => {
             const actif = path === it.href;
             return (
@@ -78,16 +60,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-        <div className="mt-auto flex flex-col gap-xs border-t border-white/5 pt-md">
-          <span className="flex items-center gap-md px-md py-sm text-on-surface-variant/60">
-            <Icon name="settings" />
-            <span className="font-label-md text-label-md">Réglages</span>
-          </span>
-          <span className="flex items-center gap-md px-md py-sm text-on-surface-variant/60">
-            <Icon name="help_center" />
-            <span className="font-label-md text-label-md">Aide</span>
-          </span>
-        </div>
       </aside>
 
       {/* Contenu */}

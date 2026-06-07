@@ -76,6 +76,16 @@ def _rangs_equipes(classement: dict | None, home_id: int, away_id: int) -> dict 
     return out or None
 
 
+def _resume_forme(forme: str) -> dict:
+    """Transforme 'WLWWW' en bilan clair pour éviter les erreurs de comptage du LLM."""
+    f = (forme or "").upper()
+    v, n, d = f.count("W"), f.count("D"), f.count("L")
+    return {
+        "bilan": f"{v}V {n}N {d}D sur {len(f)} derniers" if f else "données insuffisantes",
+        "sequence": f"{f} (du plus ancien à gauche au plus récent à droite)" if f else None,
+    }
+
+
 def collecter_dossier(api: ApiFootball, detail: dict) -> dict:
     """Assemble le dossier de faits à partir du détail du match + données qualitatives."""
     home = detail["home"]
@@ -86,7 +96,10 @@ def collecter_dossier(api: ApiFootball, detail: dict) -> dict:
         "competition": detail.get("ligue"),
         "date": detail.get("date"),
         "buts_attendus": detail["buts_attendus"],
-        "forme_recente": detail["forme"],
+        "forme": {
+            "domicile": _resume_forme(detail["forme"]["domicile"]),
+            "exterieur": _resume_forme(detail["forme"]["exterieur"]),
+        },
         "probabilites_modele": detail.get("probabilites", {}),
         "marches": [
             {"marche": s["marche"], "proba": s["proba"], "cote": s.get("cote"),
@@ -101,14 +114,20 @@ def collecter_dossier(api: ApiFootball, detail: dict) -> dict:
 
 
 _SYSTEME = (
-    "Tu es un analyste expert en paris sportifs football. On te fournit un dossier "
-    "factuel : des probabilités déjà calculées par un modèle statistique (loi de "
-    "Poisson) — que tu dois considérer comme FIABLES et NE PAS recalculer — ainsi "
-    "que des données de contexte : forme, blessures/suspensions, confrontations "
-    "directes, cotes, classement (position, points, enjeu : titre/maintien/relégation). "
-    "Ton rôle : raisonner par-dessus ces faits pour produire une analyse fine, "
-    "repérer ce que les chiffres seuls ratent (absences clés, enjeu, écart de niveau "
-    "au classement), et donner un conseil nuancé. "
+    "Tu es un analyste expert en paris sportifs football, rigoureux et concis. "
+    "On te fournit un dossier factuel : des probabilités déjà calculées par un modèle "
+    "statistique (loi de Poisson) — FIABLES, à NE PAS recalculer — et du contexte "
+    "(forme en bilan V/N/D, buts attendus, blessures, confrontations directes, "
+    "classement/enjeu, cotes et value par marché). "
+    "Les probabilités intègrent DÉJÀ le contexte du match (y compris terrain neutre "
+    "en Coupe du Monde) : 'domicile'/'extérieur' ne sont que des étiquettes, ne "
+    "re-débats donc PAS de l'avantage du terrain. "
+    "Règles : (1) sois rigoureusement COHÉRENT avec les chiffres du dossier, ne te "
+    "contredis jamais ; (2) appuie CHAQUE affirmation sur une donnée précise du "
+    "dossier ; (3) interdiction des clichés et phrases de remplissage "
+    "(ex. 'les équipes sont prudentes en tournoi') ; (4) si une donnée manque "
+    "(pas de blessures, pas de H2H), dis-le et reste mesuré au lieu d'inventer ; "
+    "(5) raisonne en value : un bon pari combine probabilité ET cote sous-évaluée. "
     "Réponds en français."
 )
 
@@ -116,17 +135,19 @@ _INSTRUCTION = """À partir du dossier JSON ci-dessous, rends UNIQUEMENT un obje
 valide (aucun texte autour), avec exactement ces clés :
 
 {
-  "analyse": "2-4 phrases d'analyse fine et nuancée",
-  "points_cles": ["point 1", "point 2", "point 3"],
-  "facteurs_risque": ["risque 1", "risque 2"],
+  "analyse": "3-4 phrases SPÉCIFIQUES et chiffrées (cite les valeurs du dossier), sans cliché",
+  "points_cles": ["fait chiffré 1", "fait chiffré 2", "fait chiffré 3"],
+  "facteurs_risque": ["risque concret 1", "risque concret 2"],
   "recommandation": {
-    "marche": "le marché conseillé",
+    "marche": "le marché conseillé (idéalement le meilleur compromis proba x value)",
     "confiance": "élevée | moyenne | faible",
-    "justification": "1 phrase"
+    "justification": "1 phrase appuyée sur proba ET value"
   },
   "accord_avec_modele": true,
   "nuance": "une phrase qui tempère ou confirme le conseil du modèle"
 }
+
+Vérifie la cohérence : les nombres que tu cites doivent correspondre EXACTEMENT au dossier.
 
 DOSSIER :
 """

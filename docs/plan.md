@@ -46,6 +46,7 @@ On ne parie pas dans l'app : on analyse, on conseille, on suit la performance.
 | 🤖 **IA sur les combinés** — analyse globale d'un ticket entier | ⭐⭐ | moyen | ⬜ |
 | 📊 **Page Équipe dédiée** — historique complet + stats d'une équipe | ⭐⭐ | moyen | ⬜ |
 | 🩹 **Blessures + H2H affichés** sur la page match (déjà récupérés pour le LLM) | ⭐ | faible | ⬜ |
+| 🔬 **Étude avancée** — analyse approfondie d'un championnat / équipe / joueur | ⭐⭐⭐ *futur* | élevé | ⬜ |
 
 ### 🎯 Backtest (LA priorité)
 - ⬜ Rejouer le modèle sur les saisons passées (matchs terminés)
@@ -61,9 +62,23 @@ On ne parie pas dans l'app : on analyse, on conseille, on suit la performance.
 - ⬜ Bouton « Actualiser les résultats » + statut « en attente » tant que le match n'est pas joué
 - ⬜ Alimente l'Analytics (ROI réel) sans saisie manuelle
 
-### 🌗 Light mode
-- ⬜ Thème clair (variables de couleur alternatives)
-- ⬜ Toggle dans la barre du haut, préférence mémorisée (localStorage)
+### 🌗 Light mode ✅
+- ✅ Thème clair (variables de couleur alternatives)
+- ✅ Toggle dans la barre du haut, préférence mémorisée (localStorage)
+
+### 🔬 Étude avancée (fonctionnalité future)
+Module de recherche poussée, au-delà du match unique — un vrai outil d'analyste.
+
+- ⬜ **Championnat complet** : tendances de la saison (équipes en forme, moyennes
+  de buts, Over/Under dominants, domicile vs extérieur, value récurrente par marché)
+- ⬜ **Équipe** : profil détaillé — attaque/défense, forme, séries, buts par tranche
+  horaire, performance domicile/extérieur, points forts/faibles, calendrier à venir
+- ⬜ **Joueur** : stats clés (buts, passes, cartons, minutes, forme), poids dans
+  l'équipe, impact de son absence (lien avec les blessures)
+- ⬜ **Synthèse IA** : le cerveau (DeepSeek) rédige une étude lisible à partir de
+  toutes ces données (le calcul reste statistique, l'IA structure et explique)
+- ⬜ Sources API-Football : `/teams/statistics`, `/players`, `/standings`,
+  `/fixtures` (historique), `/topscorers`
 
 ---
 

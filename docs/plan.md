@@ -23,7 +23,6 @@ On ne parie pas dans l'app : on analyse, on conseille, on suit la performance.
 - ✅ Pages : Accueil (hero + snapshot) · Générer · Analyses · Performance · Historique
 - ✅ Page **match détaillée** : conseil de paris, barre 1X2, forme, tous les marchés
 - ✅ **Classement par groupe** (CDM = groupes séparés) avec les 2 équipes surlignées
-- ✅ **Pronostic croisé** : nos probas EDGE vs API-Football
 - ✅ **Heures en heure de l'Est (Canada / Québec)**
 - ✅ Persistance des **tickets** (SQLite) + suivi gagné/perdu manuel
 - ✅ **Analytics** : ROI, taux de réussite, profit

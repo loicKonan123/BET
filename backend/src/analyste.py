@@ -81,7 +81,6 @@ def collecter_dossier(api: ApiFootball, detail: dict) -> dict:
     home = detail["home"]
     away = detail["away"]
     fixture_id = detail["fixture_id"]
-    pred = detail.get("prediction_api") or {}
     return {
         "match": detail["match"],
         "competition": detail.get("ligue"),
@@ -96,10 +95,6 @@ def collecter_dossier(api: ApiFootball, detail: dict) -> dict:
         ],
         "conseil_du_modele": detail.get("conseil"),
         "classement": _rangs_equipes(detail.get("classement"), home["id"], away["id"]),
-        "pronostic_api_football": {
-            "conseil": pred.get("conseil"),
-            "pourcentages": pred.get("pourcentages"),
-        } if pred else None,
         "blessures": _blessures(api, fixture_id, home["id"], away["id"]),
         "confrontations_directes": _h2h(api, home["id"], away["id"]),
     }
@@ -110,11 +105,10 @@ _SYSTEME = (
     "factuel : des probabilités déjà calculées par un modèle statistique (loi de "
     "Poisson) — que tu dois considérer comme FIABLES et NE PAS recalculer — ainsi "
     "que des données de contexte : forme, blessures/suspensions, confrontations "
-    "directes, cotes, classement (position, points, enjeu : titre/maintien/relégation) "
-    "et le pronostic d'un autre modèle (API-Football) pour recoupement. "
+    "directes, cotes, classement (position, points, enjeu : titre/maintien/relégation). "
     "Ton rôle : raisonner par-dessus ces faits pour produire une analyse fine, "
     "repérer ce que les chiffres seuls ratent (absences clés, enjeu, écart de niveau "
-    "au classement, désaccord entre modèles), et donner un conseil nuancé. "
+    "au classement), et donner un conseil nuancé. "
     "Réponds en français."
 )
 

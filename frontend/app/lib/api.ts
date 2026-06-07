@@ -89,13 +89,6 @@ export type Classement = {
   away_id: number;
 };
 
-export type PredictionAPI = {
-  conseil: string | null;
-  gagnant: string | null;
-  pourcentages: { home: string; draw: string; away: string } | null;
-  comparaison: Record<string, { home: string; away: string }>;
-};
-
 export type MatchDetail = Analyse & {
   date: string;
   home: { id: number; name: string; logo?: string };
@@ -103,7 +96,6 @@ export type MatchDetail = Analyse & {
   selections: MarketSelection[];
   conseil: Conseil | null;
   classement: Classement | null;
-  prediction_api: PredictionAPI | null;
   erreur?: string;
 };
 

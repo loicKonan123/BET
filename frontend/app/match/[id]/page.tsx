@@ -324,38 +324,6 @@ export default function MatchPage() {
             </div>
           </div>
 
-          {/* Pronostic croisé (notre modèle vs API-Football) */}
-          {m.prediction_api && (
-            <div className="glass-card rounded-xl p-lg mt-lg">
-              <h2 className="font-headline-sm text-headline-sm text-on-surface mb-md flex items-center gap-sm">
-                <Icon name="compare_arrows" className="text-secondary" /> Pronostic croisé
-              </h2>
-              {m.prediction_api.pourcentages && (
-                <div className="grid grid-cols-3 gap-sm mb-md text-center">
-                  {(["home", "draw", "away"] as const).map((k, i) => {
-                    const labels = ["Domicile", "Nul", "Extérieur"];
-                    const nous = [m.probabilites["1"], m.probabilites["X"], m.probabilites["2"]][i] ?? 0;
-                    return (
-                      <div key={k} className="bg-white/5 rounded-lg p-sm">
-                        <div className="font-label-sm text-label-sm text-on-surface-variant mb-xs">{labels[i]}</div>
-                        <div className="font-mono text-primary font-bold">{Math.round(nous * 100)}%</div>
-                        <div className="font-label-sm text-label-sm text-on-surface-variant/60">EDGE</div>
-                        <div className="font-mono text-secondary font-bold mt-xs">{m.prediction_api!.pourcentages![k]}</div>
-                        <div className="font-label-sm text-label-sm text-on-surface-variant/60">API</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              {m.prediction_api.conseil && (
-                <p className="font-body-md text-body-md text-on-surface-variant">
-                  <span className="text-on-surface-variant/60">Conseil API-Football : </span>
-                  <span className="text-on-surface">{m.prediction_api.conseil}</span>
-                </p>
-              )}
-            </div>
-          )}
-
           {/* Classement par groupe (2 équipes surlignées) */}
           {m.classement?.groupes && m.classement.groupes.length > 0 && (
             <div className="glass-card rounded-xl p-lg mt-lg overflow-x-auto">

@@ -156,24 +156,6 @@ def _classement(api, league: int, season: int, home_id: int, away_id: int) -> di
     return {"groupes": groupes, "home_id": home_id, "away_id": away_id}
 
 
-def _prediction_api(api, fixture_id: int) -> dict | None:
-    """Pronostic propre d'API-Football (pour croiser avec notre modèle)."""
-    try:
-        data = api.get("predictions", {"fixture": fixture_id})
-    except Exception:
-        return None
-    resp = data.get("response", [])
-    if not resp:
-        return None
-    p = resp[0].get("predictions", {}) or {}
-    return {
-        "conseil": p.get("advice"),
-        "gagnant": (p.get("winner") or {}).get("name"),
-        "pourcentages": p.get("percent"),     # {home, draw, away} en "x%"
-        "comparaison": resp[0].get("comparison", {}),  # form/att/def {home, away}
-    }
-
-
 def _detail_match(api, fixture_id: int, stats_season: int | None = None) -> dict:
     """Construit le détail complet d'un match (probas, value, conseil, équipes)."""
     data = api.get("fixtures", {"id": fixture_id})
@@ -208,7 +190,6 @@ def _detail_match(api, fixture_id: int, stats_season: int | None = None) -> dict
         "logo": f["teams"]["away"].get("logo"),
     }
     res["classement"] = _classement(api, fx.league, fx.season, fx.home_id, fx.away_id)
-    res["prediction_api"] = _prediction_api(api, fx.fixture_id)
     return res
 
 

@@ -35,11 +35,11 @@ export default function MatchPage() {
   const [iaLoading, setIaLoading] = useState(false);
   const [iaErreur, setIaErreur] = useState<string | null>(null);
 
-  async function demanderIA() {
+  async function demanderIA(force = false) {
     setIaLoading(true);
     setIaErreur(null);
     try {
-      const d = await getAnalyseIA(id);
+      const d = await getAnalyseIA(id, force);
       if (d.erreur) setIaErreur(d.erreur);
       else setIa(d);
     } catch (e) {
@@ -137,7 +137,7 @@ export default function MatchPage() {
               </div>
               {!ia && (
                 <button
-                  onClick={demanderIA}
+                  onClick={() => demanderIA()}
                   disabled={iaLoading}
                   className="flex items-center gap-sm bg-secondary-container text-on-secondary-container font-label-md text-label-md px-lg py-sm rounded-lg hover:opacity-90 transition-all active:scale-95 disabled:opacity-50"
                 >
@@ -152,6 +152,21 @@ export default function MatchPage() {
                       Demander l&apos;analyse
                     </>
                   )}
+                </button>
+              )}
+              {ia && (
+                <button
+                  onClick={() => demanderIA(true)}
+                  disabled={iaLoading}
+                  title="Forcer une nouvelle analyse"
+                  className="flex items-center gap-xs bg-white/5 hover:bg-white/10 text-on-surface-variant font-label-sm text-label-sm px-md py-sm rounded-lg transition-all disabled:opacity-50"
+                >
+                  <Icon
+                    name="refresh"
+                    style={{ fontSize: 16 }}
+                    className={iaLoading ? "animate-spin" : ""}
+                  />
+                  Rafraîchir
                 </button>
               )}
             </div>
@@ -241,6 +256,7 @@ export default function MatchPage() {
 
                 <span className="font-label-sm text-label-sm text-on-surface-variant/60 self-end">
                   Généré par {ia.modele}
+                  {ia.cache ? " · depuis le cache" : ""}
                 </span>
               </div>
             )}

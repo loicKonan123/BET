@@ -122,11 +122,13 @@ export type AnalyseIA = {
   accord_avec_modele: boolean | null;
   nuance: string;
   modele: string;
+  cache?: boolean;
+  cree_le?: string;
   erreur?: string;
 };
 
-export async function getAnalyseIA(fixtureId: number): Promise<AnalyseIA> {
-  const r = await fetch(`${API_URL}/api/match/${fixtureId}/ia`);
+export async function getAnalyseIA(fixtureId: number, force = false): Promise<AnalyseIA> {
+  const r = await fetch(`${API_URL}/api/match/${fixtureId}/ia${force ? "?force=1" : ""}`);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }

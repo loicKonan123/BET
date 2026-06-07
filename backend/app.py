@@ -122,6 +122,58 @@ def analyses(
         return JSONResponse({"erreur": str(e)}, status_code=500)
 
 
+def _classement(api, league: int, season: int, home_id: int, away_id: int) -> dict | None:
+    """Classement COMPLET du championnat (toutes les équipes), pour vue d'ensemble.
+
+    On renvoie toute la table + les ids des 2 équipes du match (à surligner).
+    """
+    try:
+        data = api.get("standings", {"league": league, "season": season})
+    except Exception:
+        return None
+    resp = data.get("response", [])
+    if not resp:
+        return None
+    groupes = []
+    for groupe in resp[0].get("league", {}).get("standings", []):
+        lignes, nom = [], None
+        for e in groupe:
+            nom = e.get("group") or nom
+            lignes.append({
+                "rang": e.get("rank"),
+                "equipe_id": e.get("team", {}).get("id"),
+                "equipe": e.get("team", {}).get("name"),
+                "logo": e.get("team", {}).get("logo"),
+                "points": e.get("points"),
+                "joues": e.get("all", {}).get("played"),
+                "diff": e.get("goalsDiff"),
+                "forme": e.get("form"),
+            })
+        if lignes:
+            groupes.append({"nom": nom or "Classement", "lignes": lignes})
+    if not groupes:
+        return None
+    return {"groupes": groupes, "home_id": home_id, "away_id": away_id}
+
+
+def _prediction_api(api, fixture_id: int) -> dict | None:
+    """Pronostic propre d'API-Football (pour croiser avec notre modèle)."""
+    try:
+        data = api.get("predictions", {"fixture": fixture_id})
+    except Exception:
+        return None
+    resp = data.get("response", [])
+    if not resp:
+        return None
+    p = resp[0].get("predictions", {}) or {}
+    return {
+        "conseil": p.get("advice"),
+        "gagnant": (p.get("winner") or {}).get("name"),
+        "pourcentages": p.get("percent"),     # {home, draw, away} en "x%"
+        "comparaison": resp[0].get("comparison", {}),  # form/att/def {home, away}
+    }
+
+
 def _detail_match(api, fixture_id: int, stats_season: int | None = None) -> dict:
     """Construit le détail complet d'un match (probas, value, conseil, équipes)."""
     data = api.get("fixtures", {"id": fixture_id})
@@ -155,6 +207,8 @@ def _detail_match(api, fixture_id: int, stats_season: int | None = None) -> dict
         "name": f["teams"]["away"]["name"],
         "logo": f["teams"]["away"].get("logo"),
     }
+    res["classement"] = _classement(api, fx.league, fx.season, fx.home_id, fx.away_id)
+    res["prediction_api"] = _prediction_api(api, fx.fixture_id)
     return res
 
 
@@ -171,12 +225,23 @@ def match_detail(fixture_id: int, stats_season: int | None = None):
 
 
 @app.get("/api/match/{fixture_id}/ia")
-def match_ia(fixture_id: int, stats_season: int | None = None):
-    """Analyse fine par le cerveau LLM (DeepSeek) — à la demande."""
+def match_ia(fixture_id: int, stats_season: int | None = None, force: int = 0):
+    """Analyse fine par le cerveau LLM (DeepSeek) — à la demande, avec cache.
+
+    force=1 force une nouvelle analyse (ignore le cache).
+    """
     try:
+        if not force:
+            cache = store.get_analyse_ia(fixture_id)
+            if cache:
+                return JSONResponse(cache)
+
         api = ApiFootball()
         detail = _detail_match(api, fixture_id, stats_season)
-        return JSONResponse(analyser_avec_ia(api, detail))
+        res = analyser_avec_ia(api, detail)
+        store.save_analyse_ia(fixture_id, res)
+        res["cache"] = False
+        return JSONResponse(res)
     except HTTPException:
         raise
     except Exception as e:

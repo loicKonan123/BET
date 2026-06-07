@@ -8,6 +8,7 @@ import {
   definirResultat,
   supprimerTicket,
 } from "../lib/api";
+import { dateCanada } from "../lib/date";
 
 const BADGE: Record<string, string> = {
   en_attente: "bg-tertiary/20 text-tertiary",
@@ -80,7 +81,7 @@ export default function History() {
                   TICKET #{String(t.id).padStart(2, "0")}
                 </span>
                 <span className="font-label-sm text-label-sm text-on-surface-variant">
-                  {new Date(t.cree_le).toLocaleDateString("fr-FR")}
+                  {dateCanada(t.cree_le)}
                 </span>
               </div>
               <span className={`px-sm py-xs rounded font-label-sm text-label-sm font-bold ${BADGE[t.statut]}`}>

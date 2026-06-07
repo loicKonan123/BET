@@ -38,6 +38,15 @@ def init_db() -> None:
             )
             """
         )
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS analyses_ia (
+                fixture_id  INTEGER PRIMARY KEY,
+                cree_le     TEXT NOT NULL,
+                data        TEXT NOT NULL
+            )
+            """
+        )
 
 
 def _row_to_dict(r: sqlite3.Row) -> dict:
@@ -122,3 +131,33 @@ def analytics() -> dict:
         "profit": round(profit, 2),
         "roi": round(profit / mise_totale, 4) if mise_totale else 0.0,
     }
+
+
+# ===================== Cache des analyses IA =====================
+
+def save_analyse_ia(fixture_id: int, data: dict) -> None:
+    """Stocke (ou remplace) l'analyse IA d'un match."""
+    with _conn() as c:
+        c.execute(
+            "INSERT OR REPLACE INTO analyses_ia (fixture_id, cree_le, data) VALUES (?, ?, ?)",
+            (fixture_id, datetime.now(timezone.utc).isoformat(),
+             json.dumps(data, ensure_ascii=False)),
+        )
+
+
+def get_analyse_ia(fixture_id: int) -> dict | None:
+    """Renvoie l'analyse IA en cache (permanente : calculée une fois, stable).
+
+    L'analyse ne change pas d'une visite à l'autre. Pour la recalculer,
+    l'appelant passe force=1 (qui ignore le cache et réécrit).
+    """
+    with _conn() as c:
+        r = c.execute(
+            "SELECT cree_le, data FROM analyses_ia WHERE fixture_id = ?", (fixture_id,)
+        ).fetchone()
+    if not r:
+        return None
+    d = json.loads(r["data"])
+    d["cache"] = True
+    d["cree_le"] = r["cree_le"]
+    return d

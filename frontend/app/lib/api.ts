@@ -67,12 +67,43 @@ export type Conseil = {
   raison: string;
 };
 
+export type LigneClassement = {
+  rang: number | null;
+  equipe_id: number;
+  equipe: string;
+  logo: string | null;
+  points: number | null;
+  joues: number | null;
+  diff: number | null;
+  forme: string | null;
+};
+
+export type GroupeClassement = {
+  nom: string;
+  lignes: LigneClassement[];
+};
+
+export type Classement = {
+  groupes: GroupeClassement[];
+  home_id: number;
+  away_id: number;
+};
+
+export type PredictionAPI = {
+  conseil: string | null;
+  gagnant: string | null;
+  pourcentages: { home: string; draw: string; away: string } | null;
+  comparaison: Record<string, { home: string; away: string }>;
+};
+
 export type MatchDetail = Analyse & {
   date: string;
   home: { id: number; name: string; logo?: string };
   away: { id: number; name: string; logo?: string };
   selections: MarketSelection[];
   conseil: Conseil | null;
+  classement: Classement | null;
+  prediction_api: PredictionAPI | null;
   erreur?: string;
 };
 

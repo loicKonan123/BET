@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import Icon from "../../components/Icon";
-import { AnalyseIA, MatchDetail, getAnalyseIA, getMatch } from "../../lib/api";
+import { AnalyseIA, LigneClassement, MatchDetail, getAnalyseIA, getMatch } from "../../lib/api";
+import { dateHeureCanada } from "../../lib/date";
 
 function Pastilles({ forme }: { forme: string }) {
   const couleur: Record<string, string> = {
@@ -83,7 +84,7 @@ export default function MatchPage() {
           {/* En-tête match */}
           <div className="glass-card rounded-xl p-lg md:p-xl mb-lg">
             <div className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest mb-md">
-              🏆 {m.ligue} · {new Date(m.date).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })}
+              🏆 {m.ligue} · {dateHeureCanada(m.date)}
             </div>
             <div className="flex items-center justify-between gap-md">
               <Equipe nom={m.home.name} logo={m.home.logo} />
@@ -307,6 +308,71 @@ export default function MatchPage() {
             </div>
           </div>
 
+          {/* Pronostic croisé (notre modèle vs API-Football) */}
+          {m.prediction_api && (
+            <div className="glass-card rounded-xl p-lg mt-lg">
+              <h2 className="font-headline-sm text-headline-sm text-on-surface mb-md flex items-center gap-sm">
+                <Icon name="compare_arrows" className="text-secondary" /> Pronostic croisé
+              </h2>
+              {m.prediction_api.pourcentages && (
+                <div className="grid grid-cols-3 gap-sm mb-md text-center">
+                  {(["home", "draw", "away"] as const).map((k, i) => {
+                    const labels = ["Domicile", "Nul", "Extérieur"];
+                    const nous = [m.probabilites["1"], m.probabilites["X"], m.probabilites["2"]][i] ?? 0;
+                    return (
+                      <div key={k} className="bg-white/5 rounded-lg p-sm">
+                        <div className="font-label-sm text-label-sm text-on-surface-variant mb-xs">{labels[i]}</div>
+                        <div className="font-mono text-primary font-bold">{Math.round(nous * 100)}%</div>
+                        <div className="font-label-sm text-label-sm text-on-surface-variant/60">EDGE</div>
+                        <div className="font-mono text-secondary font-bold mt-xs">{m.prediction_api!.pourcentages![k]}</div>
+                        <div className="font-label-sm text-label-sm text-on-surface-variant/60">API</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {m.prediction_api.conseil && (
+                <p className="font-body-md text-body-md text-on-surface-variant">
+                  <span className="text-on-surface-variant/60">Conseil API-Football : </span>
+                  <span className="text-on-surface">{m.prediction_api.conseil}</span>
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Classement par groupe (2 équipes surlignées) */}
+          {m.classement?.groupes && m.classement.groupes.length > 0 && (
+            <div className="glass-card rounded-xl p-lg mt-lg overflow-x-auto">
+              <h2 className="font-headline-sm text-headline-sm text-on-surface mb-md flex items-center gap-sm">
+                <Icon name="leaderboard" className="text-tertiary" /> Classement — {m.ligue}
+              </h2>
+              <div className="flex flex-col gap-lg">
+                {m.classement.groupes.map((g, gi) => (
+                  <div key={gi}>
+                    {m.classement!.groupes.length > 1 && (
+                      <div className="font-label-md text-label-md text-tertiary uppercase tracking-widest mb-sm">
+                        {g.nom}
+                      </div>
+                    )}
+                    <GroupeTable
+                      lignes={g.lignes}
+                      homeId={m.classement!.home_id}
+                      awayId={m.classement!.away_id}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-lg mt-md font-label-sm text-label-sm">
+                <span className="flex items-center gap-xs text-on-surface-variant">
+                  <span className="w-3 h-3 rounded bg-primary/40" /> {m.home.name}
+                </span>
+                <span className="flex items-center gap-xs text-on-surface-variant">
+                  <span className="w-3 h-3 rounded bg-secondary/40" /> {m.away.name}
+                </span>
+              </div>
+            </div>
+          )}
+
           <p className="font-label-sm text-label-sm text-on-surface-variant mt-xl">
             ⚠️ EDGE fournit une analyse et un conseil statistique — pas une certitude.
             Le pari se place sur Mise-o-jeu. Jouez de manière responsable.
@@ -340,5 +406,64 @@ function MiniStat({ label, value, color }: { label: string; value: string; color
       <span className="font-label-sm text-label-sm text-on-surface-variant">{label}</span>
       <span className={`font-mono font-bold text-headline-sm ${cls}`}>{value}</span>
     </div>
+  );
+}
+
+function GroupeTable({
+  lignes,
+  homeId,
+  awayId,
+}: {
+  lignes: LigneClassement[];
+  homeId: number;
+  awayId: number;
+}) {
+  return (
+    <table className="w-full text-left border-collapse">
+      <thead>
+        <tr className="font-label-sm text-label-sm text-on-surface-variant">
+          <th className="py-xs pr-sm">#</th>
+          <th className="py-xs">Équipe</th>
+          <th className="py-xs px-sm text-center">J</th>
+          <th className="py-xs px-sm text-center hidden sm:table-cell">Diff</th>
+          <th className="py-xs px-sm text-center">Pts</th>
+          <th className="py-xs pl-sm hidden md:table-cell">Forme</th>
+        </tr>
+      </thead>
+      <tbody>
+        {lignes.map((l) => {
+          const dom = l.equipe_id === homeId;
+          const ext = l.equipe_id === awayId;
+          const surligne = dom ? "bg-primary/15" : ext ? "bg-secondary/15" : "";
+          const nomCls = dom
+            ? "text-primary font-semibold"
+            : ext
+            ? "text-secondary font-semibold"
+            : "text-on-surface";
+          return (
+            <tr key={l.equipe_id} className={`border-t border-white/5 ${surligne}`}>
+              <td className="py-sm pr-sm font-mono text-on-surface-variant">{l.rang}</td>
+              <td className="py-sm">
+                <span className="flex items-center gap-sm">
+                  {l.logo && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={l.logo} alt="" className="w-5 h-5 object-contain" />
+                  )}
+                  <span className={`font-body-md text-body-md ${nomCls}`}>{l.equipe}</span>
+                </span>
+              </td>
+              <td className="py-sm px-sm text-center text-on-surface-variant font-mono">{l.joues}</td>
+              <td className="py-sm px-sm text-center text-on-surface-variant font-mono hidden sm:table-cell">
+                {l.diff != null && l.diff > 0 ? `+${l.diff}` : l.diff}
+              </td>
+              <td className="py-sm px-sm text-center font-mono font-bold text-on-surface">{l.points}</td>
+              <td className="py-sm pl-sm hidden md:table-cell">
+                <Pastilles forme={(l.forme || "").slice(-5)} />
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Icon from "./Icon";
+import ThemeToggle from "./ThemeToggle";
 
 const NAV = [
   { href: "/", label: "Accueil", icon: "home" },
@@ -36,6 +37,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           <span className="hidden sm:inline font-label-sm text-label-sm text-on-surface-variant mr-sm">
             Conseils de paris · pas de mise ici
           </span>
+          <ThemeToggle />
           <button className="material-symbols-outlined p-sm rounded-full hover:bg-primary/10 text-on-surface-variant transition-colors active:scale-95">
             notifications
           </button>

@@ -42,7 +42,7 @@ On ne parie pas dans l'app : on analyse, on conseille, on suit la performance.
 |-------|--------|--------|--------|
 | 🎯 **Backtest** — rejouer le modèle sur les saisons passées, mesurer le ROI réel | ⭐⭐⭐ *décisif avant de vendre* | élevé | ⬜ |
 | ✅ **Vérif. auto des résultats** — actualiser un ticket et voir tout seul s'il a gagné | ⭐⭐⭐ | moyen | ⬜ |
-| 🌗 **Light mode** — thème clair en plus du sombre (toggle) | ⭐⭐ | faible | ⬜ |
+| 🌗 **Light mode** — thème clair en plus du sombre (toggle) | ⭐⭐ | faible | ✅ |
 | 🤖 **IA sur les combinés** — analyse globale d'un ticket entier | ⭐⭐ | moyen | ⬜ |
 | 📊 **Page Équipe dédiée** — historique complet + stats d'une équipe | ⭐⭐ | moyen | ⬜ |
 | 🩹 **Blessures + H2H affichés** sur la page match (déjà récupérés pour le LLM) | ⭐ | faible | ⬜ |

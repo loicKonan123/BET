@@ -137,3 +137,71 @@ body {
   vertical-align: middle;
   user-select: none;
 }
+
+/* ===== Thème CLAIR (html.light) ===== */
+html.light {
+  --color-background: #f5f7fb;
+  --color-surface: #ffffff;
+  --color-surface-dim: #eef2f7;
+  --color-surface-bright: #ffffff;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f1f5f9;
+  --color-surface-container: #eef2f7;
+  --color-surface-container-high: #e2e8f0;
+  --color-surface-container-highest: #cbd5e1;
+  --color-surface-variant: #e2e8f0;
+
+  --color-on-surface: #0b1326;
+  --color-on-surface-variant: #475569;
+  --color-on-background: #0b1326;
+
+  --color-primary: #059669;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #10b981;
+  --color-on-primary-container: #064e3b;
+
+  --color-secondary: #2563eb;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #2563eb;
+  --color-on-secondary-container: #ffffff;
+
+  --color-tertiary: #b45309;
+  --color-on-tertiary: #ffffff;
+  --color-tertiary-container: #f59e0b;
+
+  --color-error: #dc2626;
+  --color-on-error: #ffffff;
+
+  --color-outline: #94a3b8;
+  --color-outline-variant: #cbd5e1;
+}
+
+html.light body {
+  background-color: #f5f7fb;
+  color: #0b1326;
+  background-image:
+    radial-gradient(at 0% 0%, rgba(5, 150, 105, 0.06) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(37, 99, 235, 0.06) 0px, transparent 50%);
+}
+
+html.light .custom-grid {
+  background-image:
+    linear-gradient(to right, rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+}
+
+html.light .glass-card {
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+html.light .glass-card:hover {
+  border-color: rgba(5, 150, 105, 0.35);
+  background: rgba(255, 255, 255, 0.95);
+}
+
+/* Les overlays blancs (bg-white/5, etc.) deviennent des gris sombres en clair */
+html.light .bg-white\/5 { background-color: rgba(15, 23, 42, 0.04); }
+html.light .bg-white\/10 { background-color: rgba(15, 23, 42, 0.06); }
+html.light .border-white\/5 { border-color: rgba(15, 23, 42, 0.06); }
+html.light .border-white\/10 { border-color: rgba(15, 23, 42, 0.1); }

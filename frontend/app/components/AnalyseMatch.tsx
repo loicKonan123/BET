@@ -1,6 +1,25 @@
 import Link from "next/link";
 import { Analyse } from "../lib/api";
+import { dateHeureCanada } from "../lib/date";
 import Icon from "./Icon";
+
+const LIVE_STATUTS = new Set(["1H","HT","2H","ET","BT","P","SUSP","INT","LIVE"]);
+
+function StatutBadge({ status, date }: { status?: string; date?: string }) {
+  if (LIVE_STATUTS.has(status ?? "")) {
+    return (
+      <span className="flex items-center gap-xs px-sm py-xs rounded-full bg-error/20 text-error font-label-sm text-label-sm">
+        <span className="w-1.5 h-1.5 rounded-full bg-error animate-ping inline-block" />
+        En cours
+      </span>
+    );
+  }
+  return (
+    <span className="font-label-sm text-label-sm text-on-surface-variant">
+      {date ? dateHeureCanada(date) : "—"}
+    </span>
+  );
+}
 
 function Pastilles({ forme }: { forme: string }) {
   const couleur: Record<string, string> = {
@@ -36,8 +55,9 @@ export default function AnalyseMatch({ a, href }: { a: Analyse; href?: string })
     <div className="glass-card p-lg rounded-xl flex flex-col gap-md h-full">
       {/* Entête */}
       <div>
-        <div className="font-label-sm text-label-sm text-on-surface-variant mb-xs">
-          🏆 {a.ligue}
+        <div className="flex items-center justify-between mb-xs">
+          <span className="font-label-sm text-label-sm text-on-surface-variant">🏆 {a.ligue}</span>
+          <StatutBadge status={a.status} date={a.date} />
         </div>
         <div className="flex items-center justify-between gap-sm">
           <span className="font-body-md text-body-md text-on-surface font-semibold">

@@ -67,21 +67,31 @@ class FixtureInfo:
     away_id: int
     home_name: str
     away_name: str
+    date: str = ""    # datetime ISO du coup d'envoi
+    status: str = "NS"  # code statut API-Football
+
+
+STATUTS_UPCOMING = {"NS", "TBD"}
+STATUTS_LIVE     = {"1H", "HT", "2H", "ET", "BT", "P", "SUSP", "INT", "LIVE"}
+STATUTS_TERMINES = {"FT", "AET", "PEN", "AWD", "WO"}
 
 
 def fixtures_depuis_reponse(
     reponse: list,
     league_id: int | None = None,
     ligues_autorisees: set[int] | None = None,
+    statuts_autorises: set[str] | None = None,
 ) -> list[FixtureInfo]:
     """Convertit la réponse `fixtures` de l'API en liste de FixtureInfo.
 
-    league_id : ne garder qu'une ligue précise.
-    ligues_autorisees : VALIDATEUR — ne garder que les ligues de cet ensemble
-        (ex: la liste blanche Mise-o-jeu) pour ne jamais proposer un match injouable.
+    statuts_autorises : None = tous les statuts. Passer STATUTS_UPCOMING pour
+        le mode génération de tickets (matchs pas encore joués uniquement).
     """
     out = []
     for f in reponse:
+        status = f["fixture"]["status"]["short"]
+        if statuts_autorises is not None and status not in statuts_autorises:
+            continue
         lid = f["league"]["id"]
         if league_id is not None and lid != league_id:
             continue
@@ -95,6 +105,8 @@ def fixtures_depuis_reponse(
             away_id=f["teams"]["away"]["id"],
             home_name=f["teams"]["home"]["name"],
             away_name=f["teams"]["away"]["name"],
+            date=f["fixture"].get("date", ""),
+            status=status,
         ))
     return out
 
@@ -139,12 +151,15 @@ def analyser_fixture(
             "proba_implicite": round(sel.proba_implicite, 4),
             "value": round(sel.value, 4),
             "est_value_bet": sel.est_value_bet,
+            "fixture_id": fx.fixture_id,
         })
 
     return {
         "match": match_label,
         "ligue": _nom_ligue(fx.league),
         "fixture_id": fx.fixture_id,
+        "date": fx.date,
+        "status": fx.status,
         "buts_attendus": {"domicile": round(lam_dom, 2), "exterieur": round(lam_ext, 2)},
         "forme": {"domicile": dom.forme[-5:], "exterieur": ext.forme[-5:]},
         "probabilites": {k: round(v, 4) for k, v in probas.items()},
@@ -181,6 +196,8 @@ def analyser_fixture_sans_cotes(
         "match": match_label,
         "ligue": _nom_ligue(fx.league),
         "fixture_id": fx.fixture_id,
+        "date": fx.date,
+        "status": fx.status,
         "buts_attendus": {"domicile": round(lam_dom, 2), "exterieur": round(lam_ext, 2)},
         "forme": {"domicile": dom.forme[-5:], "exterieur": ext.forme[-5:]},
         "probabilites": {k: round(v, 4) for k, v in probas.items()},
@@ -266,6 +283,9 @@ def _selections_objets(analyses: list[dict], value_min: float) -> list[Selection
                     match=a["match"], marche=s["marche"],
                     proba=s["proba"], cote=s["cote"],
                     ligue=a.get("ligue", ""),
+                    fixture_id=s.get("fixture_id", a.get("fixture_id", 0)),
+                    cle=s.get("cle", ""),
+                    match_date=s.get("match_date", a.get("date", "")),
                 ))
     return out
 
@@ -306,7 +326,9 @@ def generer_pronostics(
             "value": round(c.value_combinee, 4),
             "selections": [
                 {"match": s.match, "ligue": s.ligue, "marche": s.marche,
-                 "cote": s.cote, "proba": round(s.proba, 4)}
+                 "cote": s.cote, "proba": round(s.proba, 4),
+                 "fixture_id": s.fixture_id, "cle": s.cle,
+                 "match_date": s.match_date}
                 for s in c.selections
             ],
         })

@@ -19,7 +19,10 @@ class Selection:
     marche: str         # "1 (domicile)", "Over 2.5", "BTTS oui"...
     proba: float        # notre probabilité calculée (0..1)
     cote: float         # cote du bookmaker
-    ligue: str = ""     # nom du championnat (pour retrouver le match sur Mise-o-jeu)
+    ligue: str = ""       # nom du championnat (pour retrouver le match sur Mise-o-jeu)
+    fixture_id: int = 0   # ID API-Football (pour grader le résultat)
+    cle: str = ""         # clé marché brute ("1", "X", "over_2.5", …)
+    match_date: str = ""  # datetime ISO du match (pour ne checker qu'après coup)
 
     @property
     def proba_implicite(self) -> float:

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useTicketBuilder } from "../lib/useTicketBuilder";
 import Icon from "./Icon";
 import ThemeToggle from "./ThemeToggle";
 
@@ -15,6 +16,7 @@ const NAV = [
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
+  const { picks } = useTicketBuilder();
 
   return (
     <>
@@ -59,6 +61,26 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               </Link>
             );
           })}
+
+          {/* Ticket builder */}
+          <Link
+            href="/ticket-builder"
+            className={`flex items-center gap-md p-md rounded-lg transition-all ${
+              path === "/ticket-builder"
+                ? "bg-secondary-container text-on-secondary-container font-bold"
+                : "text-on-surface-variant hover:bg-surface-container-high hover:translate-x-1"
+            }`}
+          >
+            <span className="relative">
+              <Icon name="receipt_long" />
+              {picks.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary text-on-primary flex items-center justify-center font-mono text-[10px] font-bold">
+                  {picks.length}
+                </span>
+              )}
+            </span>
+            <span className="font-label-md text-label-md">Mon ticket</span>
+          </Link>
         </nav>
       </aside>
 
@@ -84,6 +106,22 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             </Link>
           );
         })}
+        <Link
+          href="/ticket-builder"
+          className={`flex flex-col items-center p-xs rounded transition-all relative ${
+            path === "/ticket-builder" ? "text-primary scale-110" : "text-on-surface-variant"
+          }`}
+        >
+          <span className="relative">
+            <Icon name="receipt_long" />
+            {picks.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary text-on-primary flex items-center justify-center font-mono text-[10px] font-bold">
+                {picks.length}
+              </span>
+            )}
+          </span>
+          <span className="font-label-sm text-label-sm">Ticket</span>
+        </Link>
       </nav>
     </>
   );

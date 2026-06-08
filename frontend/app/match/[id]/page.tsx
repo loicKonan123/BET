@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import Icon from "../../components/Icon";
-import { AnalyseIA, LigneClassement, MatchDetail, getAnalyseIA, getMatch } from "../../lib/api";
+import { AnalyseIA, CompoEquipe, DernierMatch, LigneClassement, MatchDetail, getAnalyseIA, getMatch } from "../../lib/api";
 import { dateHeureCanada } from "../../lib/date";
+import { useTicketBuilder } from "../../lib/useTicketBuilder";
 
 function Pastilles({ forme }: { forme: string }) {
   const couleur: Record<string, string> = {
@@ -34,6 +35,8 @@ export default function MatchPage() {
   const [ia, setIa] = useState<AnalyseIA | null>(null);
   const [iaLoading, setIaLoading] = useState(false);
   const [iaErreur, setIaErreur] = useState<string | null>(null);
+  const [tabClassement, setTabClassement] = useState(0);
+  const { picks, add, remove } = useTicketBuilder();
 
   async function demanderIA(force = false) {
     setIaLoading(true);
@@ -53,8 +56,18 @@ export default function MatchPage() {
     if (!id) return;
     getMatch(id)
       .then((d) => {
-        if (d.erreur) setErreur(d.erreur);
-        else setM(d);
+        if (d.erreur) { setErreur(d.erreur); return; }
+        setM(d);
+        // Sélectionner automatiquement le groupe qui contient les deux équipes
+        if (d.classement?.groupes) {
+          const homeId = d.home?.id ?? d.classement.home_id;
+          const awayId = d.away?.id ?? d.classement.away_id;
+          const idx = d.classement.groupes.findIndex((g) => {
+            const ids = new Set(g.lignes.map((l) => l.equipe_id));
+            return ids.has(homeId) && ids.has(awayId);
+          });
+          if (idx >= 0) setTabClassement(idx);
+        }
       })
       .catch((e) => setErreur(e instanceof Error ? e.message : "Erreur réseau"))
       .finally(() => setLoading(false));
@@ -300,22 +313,45 @@ export default function MatchPage() {
               <h2 className="font-headline-sm text-headline-sm text-on-surface mb-md">Tous les marchés</h2>
               {m.selections.length > 0 ? (
                 <div className="flex flex-col gap-xs">
-                  <div className="grid grid-cols-12 font-label-sm text-label-sm text-on-surface-variant px-sm pb-xs">
-                    <span className="col-span-6">Marché</span>
-                    <span className="col-span-2 text-right">Proba</span>
-                    <span className="col-span-2 text-right">Cote</span>
-                    <span className="col-span-2 text-right">Value</span>
+                  <div className="grid grid-cols-13 font-label-sm text-label-sm text-on-surface-variant px-sm pb-xs" style={{ gridTemplateColumns: "1fr auto auto auto auto" }}>
+                    <span>Marché</span>
+                    <span className="text-right pl-md">Proba</span>
+                    <span className="text-right pl-md">Cote</span>
+                    <span className="text-right pl-md">Value</span>
+                    <span className="pl-sm" />
                   </div>
-                  {m.selections.map((s) => (
-                    <div key={s.cle} className={`grid grid-cols-12 items-center px-sm py-sm rounded font-label-md text-label-md ${s.est_value_bet ? "bg-primary/10 border border-primary/20" : "bg-white/5"}`}>
-                      <span className="col-span-6 text-on-surface">{s.marche}</span>
-                      <span className="col-span-2 text-right text-secondary">{pct(s.proba)}</span>
-                      <span className="col-span-2 text-right text-on-surface-variant">{s.cote.toFixed(2)}</span>
-                      <span className={`col-span-2 text-right font-bold ${s.value >= 0 ? "text-primary" : "text-error"}`}>
-                        {s.value >= 0 ? "+" : ""}{Math.round(s.value * 100)}%
-                      </span>
-                    </div>
-                  ))}
+                  {m.selections.map((s) => {
+                    const inPicks = picks.some((p) => p.fixture_id === m.fixture_id && p.cle === s.cle);
+                    const isConseil = m.conseil?.marche === s.marche;
+                    const rowCls = isConseil
+                      ? "bg-tertiary/15 border border-tertiary/40 shadow-[0_0_12px_rgba(var(--md-sys-color-tertiary)/0.15)]"
+                      : s.est_value_bet
+                      ? "bg-primary/10 border border-primary/20"
+                      : "bg-white/5";
+                    return (
+                      <div key={s.cle} style={{ gridTemplateColumns: "1fr auto auto auto auto" }} className={`grid items-center px-sm py-sm rounded font-label-md text-label-md ${rowCls}`}>
+                        <span className={`flex items-center gap-xs ${isConseil ? "text-tertiary font-semibold" : "text-on-surface"}`}>
+                          {isConseil && <Icon name="star" style={{ fontSize: 14 }} className="text-tertiary flex-shrink-0" />}
+                          {s.marche}
+                        </span>
+                        <span className="text-right pl-md text-secondary">{pct(s.proba)}</span>
+                        <span className="text-right pl-md text-on-surface-variant">{s.cote.toFixed(2)}</span>
+                        <span className={`text-right pl-md font-bold ${s.value >= 0 ? "text-primary" : "text-error"}`}>
+                          {s.value >= 0 ? "+" : ""}{Math.round(s.value * 100)}%
+                        </span>
+                        <button
+                          onClick={() => inPicks
+                            ? remove(m.fixture_id, s.cle)
+                            : add({ match: m.match, ligue: m.ligue, marche: s.marche, cote: s.cote, proba: s.proba, fixture_id: m.fixture_id, cle: s.cle, match_date: m.date ?? "" })
+                          }
+                          title={inPicks ? "Retirer" : "Ajouter au ticket"}
+                          className={`ml-sm w-6 h-6 rounded flex items-center justify-center transition-all flex-shrink-0 ${inPicks ? "bg-primary text-on-primary" : "bg-white/10 hover:bg-primary/30 text-on-surface-variant"}`}
+                        >
+                          <Icon name={inPicks ? "check" : "add"} style={{ fontSize: 14 }} />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-on-surface-variant font-body-md">
@@ -325,28 +361,41 @@ export default function MatchPage() {
             </div>
           </div>
 
-          {/* Classement par groupe (2 équipes surlignées) */}
+          {/* Classement — tabs par groupe */}
           {m.classement?.groupes && m.classement.groupes.length > 0 && (
-            <div className="glass-card rounded-xl p-lg mt-lg overflow-x-auto">
+            <div className="glass-card rounded-xl p-lg mt-lg">
               <h2 className="font-headline-sm text-headline-sm text-on-surface mb-md flex items-center gap-sm">
                 <Icon name="leaderboard" className="text-tertiary" /> Classement — {m.ligue}
               </h2>
-              <div className="flex flex-col gap-lg">
-                {m.classement.groupes.map((g, gi) => (
-                  <div key={gi}>
-                    {m.classement!.groupes.length > 1 && (
-                      <div className="font-label-md text-label-md text-tertiary uppercase tracking-widest mb-sm">
-                        {g.nom}
-                      </div>
-                    )}
-                    <GroupeTable
-                      lignes={g.lignes}
-                      homeId={m.classement!.home_id}
-                      awayId={m.classement!.away_id}
-                    />
-                  </div>
-                ))}
+
+              {/* Tabs */}
+              {m.classement.groupes.length > 1 && (
+                <div className="flex gap-xs flex-wrap mb-md">
+                  {m.classement.groupes.map((g, gi) => (
+                    <button
+                      key={gi}
+                      onClick={() => setTabClassement(gi)}
+                      className={`px-md py-xs rounded-full font-label-sm text-label-sm transition-all border ${
+                        tabClassement === gi
+                          ? "bg-tertiary/20 text-tertiary border-tertiary/30"
+                          : "bg-white/5 text-on-surface-variant border-white/10 hover:border-tertiary/20"
+                      }`}
+                    >
+                      {g.nom}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Table du groupe actif, hauteur fixe + scroll */}
+              <div className="overflow-x-auto overflow-y-auto max-h-80">
+                <GroupeTable
+                  lignes={m.classement.groupes[tabClassement]?.lignes ?? []}
+                  homeId={m.classement.home_id}
+                  awayId={m.classement.away_id}
+                />
               </div>
+
               <div className="flex gap-lg mt-md font-label-sm text-label-sm">
                 <span className="flex items-center gap-xs text-on-surface-variant">
                   <span className="w-3 h-3 rounded bg-primary/40" /> {m.home.name}
@@ -358,10 +407,47 @@ export default function MatchPage() {
             </div>
           )}
 
-          <p className="font-label-sm text-label-sm text-on-surface-variant mt-xl">
-            ⚠️ EDGE fournit une analyse et un conseil statistique — pas une certitude.
-            Jouez de manière responsable.
-          </p>
+          {/* Derniers matchs */}
+          {(m.derniers_matchs_dom?.length > 0 || m.derniers_matchs_ext?.length > 0) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-lg mt-lg">
+              {[
+                { equipe: m.home.name, matchs: m.derniers_matchs_dom },
+                { equipe: m.away.name, matchs: m.derniers_matchs_ext },
+              ].map(({ equipe, matchs }) => (
+                <div key={equipe} className="glass-card rounded-xl p-lg">
+                  <h2 className="font-headline-sm text-headline-sm text-on-surface mb-md flex items-center gap-sm">
+                    <Icon name="history" className="text-secondary" /> {equipe}
+                  </h2>
+                  <div className="flex flex-col gap-xs">
+                    {matchs.map((dm, i) => (
+                      <DernierMatchLigne key={i} dm={dm} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Compositions */}
+          {m.compos?.length > 0 ? (
+            <div className="glass-card rounded-xl p-lg mt-lg">
+              <h2 className="font-headline-sm text-headline-sm text-on-surface mb-md flex items-center gap-sm">
+                <Icon name="groups" className="text-secondary" /> Compositions
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-lg">
+                {m.compos.map((c) => <CompoCard key={c.equipe} c={c} />)}
+              </div>
+            </div>
+          ) : (
+            <div className="glass-card rounded-xl p-lg mt-lg">
+              <h2 className="font-headline-sm text-headline-sm text-on-surface mb-md flex items-center gap-sm">
+                <Icon name="groups" className="text-secondary" /> Compositions
+              </h2>
+              <p className="text-on-surface-variant font-body-md">
+                Pas encore disponibles — les compositions sont annoncées environ 1h avant le match.
+              </p>
+            </div>
+          )}
         </>
       )}
     </>
@@ -450,5 +536,79 @@ function GroupeTable({
         })}
       </tbody>
     </table>
+  );
+}
+
+const RES_COLOR: Record<string, string> = {
+  W: "bg-primary/25 text-primary",
+  D: "bg-tertiary/25 text-tertiary",
+  L: "bg-error/25 text-error",
+};
+const RES_LABEL: Record<string, string> = { W: "V", D: "N", L: "D" };
+
+function DernierMatchLigne({ dm }: { dm: DernierMatch }) {
+  return (
+    <div className="flex items-center justify-between gap-sm py-xs border-b border-white/5 last:border-0">
+      <span className={`w-6 h-6 rounded flex items-center justify-center font-label-sm text-label-sm font-bold flex-shrink-0 ${RES_COLOR[dm.resultat]}`}>
+        {RES_LABEL[dm.resultat]}
+      </span>
+      <div className="flex flex-col flex-1 min-w-0">
+        <span className="font-body-sm text-body-sm text-on-surface truncate">
+          {dm.domicile} <span className="text-on-surface-variant">–</span> {dm.exterieur}
+        </span>
+        <span className="font-label-sm text-label-sm text-on-surface-variant">
+          {dateHeureCanada(dm.date)}
+        </span>
+      </div>
+      <span className="font-mono font-bold text-on-surface font-label-md text-label-md flex-shrink-0">
+        {dm.score}
+      </span>
+    </div>
+  );
+}
+
+const POSTE_ORDER: Record<string, number> = { G: 0, D: 1, M: 2, F: 3 };
+
+function CompoCard({ c }: { c: CompoEquipe }) {
+  const titulaires = [...c.titulaires].sort(
+    (a, b) => (POSTE_ORDER[a.poste ?? ""] ?? 9) - (POSTE_ORDER[b.poste ?? ""] ?? 9)
+  );
+  return (
+    <div>
+      <div className="flex items-center gap-sm mb-sm">
+        {c.logo && <img src={c.logo} alt="" className="w-6 h-6 object-contain" />}
+        <span className="font-headline-sm text-headline-sm text-on-surface">{c.equipe}</span>
+        {c.formation && (
+          <span className="ml-auto font-mono font-bold text-primary bg-primary/10 px-sm py-xs rounded">
+            {c.formation}
+          </span>
+        )}
+      </div>
+      <div className="flex flex-col gap-xs mb-sm">
+        {titulaires.map((j, i) => (
+          <div key={i} className="flex items-center gap-sm py-xs border-b border-white/5 last:border-0">
+            <span className="font-mono text-on-surface-variant w-6 text-right flex-shrink-0">{j.numero ?? "—"}</span>
+            <span className="font-body-sm text-body-sm text-on-surface flex-1">{j.nom}</span>
+            <span className="font-label-sm text-label-sm text-secondary flex-shrink-0">{j.poste}</span>
+          </div>
+        ))}
+      </div>
+      {c.remplacants.length > 0 && (
+        <details className="mt-xs">
+          <summary className="font-label-sm text-label-sm text-on-surface-variant cursor-pointer">
+            Remplaçants ({c.remplacants.length})
+          </summary>
+          <div className="flex flex-col gap-xs mt-xs">
+            {c.remplacants.map((j, i) => (
+              <div key={i} className="flex items-center gap-sm py-xs border-b border-white/5 last:border-0">
+                <span className="font-mono text-on-surface-variant w-6 text-right flex-shrink-0">{j.numero ?? "—"}</span>
+                <span className="font-body-sm text-body-sm text-on-surface-variant flex-1">{j.nom}</span>
+                <span className="font-label-sm text-label-sm text-secondary flex-shrink-0">{j.poste}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
   );
 }

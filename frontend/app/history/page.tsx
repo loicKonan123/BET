@@ -5,8 +5,8 @@ import Icon from "../components/Icon";
 import {
   TicketEnregistre,
   listerTickets,
-  definirResultat,
   supprimerTicket,
+  settlerTickets,
 } from "../lib/api";
 import { dateCanada } from "../lib/date";
 
@@ -35,13 +35,8 @@ export default function History() {
   }
 
   useEffect(() => {
-    charger();
+    settlerTickets().catch(() => {}).finally(() => charger());
   }, []);
-
-  async function marquer(id: number, statut: "gagne" | "perdu" | "en_attente") {
-    const t = await definirResultat(id, statut);
-    setTickets((arr) => arr.map((x) => (x.id === id ? t : x)));
-  }
 
   async function supprimer(id: number) {
     await supprimerTicket(id);
@@ -55,7 +50,7 @@ export default function History() {
           Historique des tickets
         </h1>
         <p className="font-body-lg text-on-surface-variant">
-          Marque chaque ticket comme gagné ou perdu pour suivre ta performance.
+          Résultats vérifiés automatiquement dès que les matchs sont terminés.
         </p>
       </div>
 
@@ -102,37 +97,15 @@ export default function History() {
             </div>
 
             <div className="flex justify-between items-center text-label-md font-label-md mb-md pt-md border-t border-white/10">
-              <span className="text-on-surface-variant">Mise {t.mise}$</span>
               <span className="text-primary font-bold">Cote {t.cote_totale.toFixed(2)}</span>
-              <span className="text-secondary">
-                Gain {t.statut === "gagne" ? (t.mise * t.cote_totale).toFixed(2) : "0.00"}$
-              </span>
+              <span className="text-secondary">Proba {Math.round(t.proba_reussite * 100)}%</span>
             </div>
 
-            <div className="flex gap-sm">
-              <button
-                onClick={() => marquer(t.id, "gagne")}
-                className="flex-1 bg-primary/15 hover:bg-primary hover:text-on-primary text-primary py-sm rounded-lg font-label-md text-label-md transition-all"
-              >
-                Gagné
-              </button>
-              <button
-                onClick={() => marquer(t.id, "perdu")}
-                className="flex-1 bg-error/15 hover:bg-error hover:text-on-error text-error py-sm rounded-lg font-label-md text-label-md transition-all"
-              >
-                Perdu
-              </button>
-              <button
-                onClick={() => marquer(t.id, "en_attente")}
-                title="Remettre en attente"
-                className="px-sm bg-white/5 hover:bg-white/10 text-on-surface-variant rounded-lg transition-all"
-              >
-                <Icon name="restart_alt" style={{ fontSize: 18 }} />
-              </button>
+            <div className="flex justify-end">
               <button
                 onClick={() => supprimer(t.id)}
                 title="Supprimer"
-                className="px-sm bg-white/5 hover:bg-error/20 text-on-surface-variant hover:text-error rounded-lg transition-all"
+                className="px-sm py-sm bg-white/5 hover:bg-error/20 text-on-surface-variant hover:text-error rounded-lg transition-all"
               >
                 <Icon name="delete" style={{ fontSize: 18 }} />
               </button>

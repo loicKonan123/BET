@@ -18,10 +18,10 @@ export default function AnalyticsPage() {
     <>
       <div className="mb-xl">
         <h1 className="font-headline-lg text-headline-lg text-primary mb-xs">
-          Analytics
+          Performance des pronostics
         </h1>
         <p className="font-body-lg text-on-surface-variant">
-          Performance de tes tickets sauvegardés (basée sur les résultats marqués).
+          Précision du modèle statistique sur les tickets enregistrés.
         </p>
       </div>
 
@@ -33,47 +33,39 @@ export default function AnalyticsPage() {
 
       {a && (
         <>
-          {/* KPIs principaux */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-lg mb-lg">
-            <Kpi
-              label="ROI"
-              value={`${a.roi >= 0 ? "+" : ""}${(a.roi * 100).toFixed(1)}%`}
-              icon="trending_up"
-              color={a.roi >= 0 ? "primary" : "error"}
-              big
-            />
             <Kpi
               label="Taux de réussite"
               value={`${(a.taux_reussite * 100).toFixed(1)}%`}
               icon="target"
-              color="secondary"
+              color="primary"
               big
             />
             <Kpi
-              label="Profit net"
-              value={`${a.profit >= 0 ? "+" : ""}${a.profit.toFixed(2)}$`}
-              icon="payments"
-              color={a.profit >= 0 ? "primary" : "error"}
+              label="Tickets gagnés"
+              value={String(a.gagnes)}
+              icon="check_circle"
+              color="primary"
+              big
+            />
+            <Kpi
+              label="Tickets perdus"
+              value={String(a.perdus)}
+              icon="cancel"
+              color="error"
               big
             />
           </div>
 
-          {/* Détails */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-md mb-lg">
-            <Kpi label="Tickets" value={String(a.total)} icon="confirmation_number" color="secondary" />
-            <Kpi label="Gagnés" value={String(a.gagnes)} icon="check_circle" color="primary" />
-            <Kpi label="Perdus" value={String(a.perdus)} icon="cancel" color="error" />
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-md mb-lg">
+            <Kpi label="Total enregistrés" value={String(a.total)} icon="confirmation_number" color="secondary" />
             <Kpi label="En attente" value={String(a.en_attente)} icon="hourglass_empty" color="tertiary" />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-md">
-            <Kpi label="Mise totale (réglée)" value={`${a.mise_totale.toFixed(2)}$`} icon="account_balance_wallet" color="secondary" />
-            <Kpi label="Gain total" value={`${a.gain_total.toFixed(2)}$`} icon="savings" color="primary" />
+            <Kpi label="Réglés" value={String(a.gagnes + a.perdus)} icon="fact_check" color="secondary" />
           </div>
 
           {a.total === 0 && (
             <p className="text-on-surface-variant mt-lg">
-              Aucune donnée encore — sauvegarde des tickets puis marque-les gagnés/perdus dans l&apos;Historique.
+              Aucune donnée encore — génère et sauvegarde des tickets depuis l&apos;onglet Ticket Gen.
             </p>
           )}
         </>

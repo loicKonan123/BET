@@ -8,7 +8,8 @@ L'endpoint /api/generer fait tourner le pipeline et renvoie le JSON
 (combinés + analyses). Grâce au cache disque, recliquer ne reconsomme
 pas le quota API.
 """
-from datetime import date, timedelta
+from contextlib import asynccontextmanager
+from datetime import date, datetime, timedelta, timezone
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -21,6 +22,8 @@ from src.analyste import analyser_avec_ia
 from src.api_client import ApiFootball
 from src.ligues_mise_o_jeu import IDS_SOCCER, LIGUES_SOCCER
 from src.pipeline import (
+    STATUTS_LIVE,
+    STATUTS_UPCOMING,
     analyser_fixture,
     analyser_fixture_sans_cotes,
     conseil_de_paris,
@@ -28,8 +31,126 @@ from src.pipeline import (
     generer_pronostics,
 )
 
-app = FastAPI(title="BET — API")
-store.init_db()
+
+# ===================== Grading automatique =====================
+
+def _grader_selection(cle: str, score_home: int, score_away: int) -> bool | None:
+    """Grade une sélection selon la clé marché et le score final."""
+    total = score_home + score_away
+    if cle == "1":         return score_home > score_away
+    if cle == "X":         return score_home == score_away
+    if cle == "2":         return score_away > score_home
+    if cle == "1X":        return score_home >= score_away
+    if cle == "12":        return score_home != score_away
+    if cle == "X2":        return score_away >= score_home
+    if cle == "btts_oui":  return score_home > 0 and score_away > 0
+    if cle == "btts_non":  return score_home == 0 or score_away == 0
+    # Over/Under générique : "over_2.5", "under_1.5", etc.
+    if cle.startswith("over_"):
+        try:
+            seuil = float(cle[5:])
+            return total > seuil
+        except ValueError:
+            pass
+    if cle.startswith("under_"):
+        try:
+            seuil = float(cle[6:])
+            return total < seuil
+        except ValueError:
+            pass
+    return None
+
+
+def _match_terminé(match_date: str) -> bool:
+    """Vrai si le match a démarré il y a plus de 2h (le temps qu'il soit fini)."""
+    if not match_date:
+        return True  # date inconnue → on tente quand même
+    try:
+        dt = datetime.fromisoformat(match_date)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) >= dt + timedelta(hours=2)
+    except ValueError:
+        return True
+
+
+def _settle_tickets() -> dict:
+    """Vérifie les résultats API-Football pour les tickets en_attente dont les matchs sont terminés.
+
+    N'appelle l'API que pour les fixtures dont l'heure de coup d'envoi + 2h est passée,
+    afin de ne pas gaspiller le quota API-Football.
+    """
+    tickets = store.lister_tickets()
+    en_attente = [t for t in tickets if t["statut"] == "en_attente"]
+    if not en_attente:
+        return {"settled": 0, "skipped": 0}
+
+    # Collecte les fixture_id à vérifier (matchs potentiellement terminés seulement)
+    fids_a_checker: set[int] = set()
+    for ticket in en_attente:
+        for sel in ticket["selections"]:
+            fid = sel.get("fixture_id", 0)
+            if fid and sel.get("cle") and _match_terminé(sel.get("match_date", "")):
+                fids_a_checker.add(fid)
+
+    if not fids_a_checker:
+        return {"settled": 0, "skipped": len(en_attente)}
+
+    api = ApiFootball()
+    cache_scores: dict[int, dict | None] = {}
+
+    for fid in fids_a_checker:
+        try:
+            data = api.get("fixtures", {"id": fid})
+            resp = data.get("response", [])
+            if not resp:
+                cache_scores[fid] = None
+                continue
+            f = resp[0]
+            if f["fixture"]["status"]["short"] not in ("FT", "AET", "PEN"):
+                cache_scores[fid] = None
+                continue
+            s = f["score"]["fulltime"]
+            cache_scores[fid] = {"home": s["home"], "away": s["away"]}
+        except Exception:
+            cache_scores[fid] = None
+
+    settled = 0
+    for ticket in en_attente:
+        resultats = []
+        for sel in ticket["selections"]:
+            fid = sel.get("fixture_id", 0)
+            cle = sel.get("cle", "")
+            if not fid or not cle:
+                resultats.append(None)
+                continue
+            score = cache_scores.get(fid)
+            if score is None:
+                resultats.append(None)
+                continue
+            resultats.append(_grader_selection(cle, score["home"], score["away"]))
+
+        if any(r is False for r in resultats):
+            store.definir_statut(ticket["id"], "perdu")
+            settled += 1
+        elif resultats and all(r is True for r in resultats):
+            store.definir_statut(ticket["id"], "gagne")
+            settled += 1
+
+    return {"settled": settled, "skipped": len(en_attente) - settled}
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    store.init_db()
+    try:
+        _settle_tickets()
+    except Exception:
+        pass
+    yield
+
+
+app = FastAPI(title="BET — API", lifespan=lifespan)
 
 # Autorise le frontend Next.js (dev) à appeler l'API
 app.add_middleware(
@@ -59,9 +180,12 @@ def _fenetre_dates(jours_avant: int = 7) -> list[str]:
     return [(today + timedelta(days=i)).isoformat() for i in range(0, jours_avant + 1)]
 
 
-def _scanner_fixtures(api, jours: int, valider: int, max_matchs: int):
-    """Récupère les matchs jouables sur la fenêtre de dates. -> (fixtures, dates_ok)."""
+def _scanner_fixtures(api, jours: int, valider: int, max_matchs: int,
+                       statuts_autorises=None):
+    """Récupère les matchs sur la fenêtre de dates. -> (fixtures, dates_ok)."""
     autorisees = IDS_SOCCER if valider else None
+    if statuts_autorises is None:
+        statuts_autorises = STATUTS_UPCOMING
     fixtures, dates_ok = [], []
     for d in _fenetre_dates(jours):
         try:
@@ -70,7 +194,9 @@ def _scanner_fixtures(api, jours: int, valider: int, max_matchs: int):
             continue
         dates_ok.append(d)
         fixtures += fixtures_depuis_reponse(
-            data.get("response", []), ligues_autorisees=autorisees
+            data.get("response", []),
+            ligues_autorisees=autorisees,
+            statuts_autorises=statuts_autorises,
         )
     return fixtures[:max_matchs], dates_ok
 
@@ -111,7 +237,10 @@ def analyses(
     """Liste des matchs jouables analysés (probas + forme), pour la page Analyses."""
     try:
         api = ApiFootball()
-        fixtures, dates_ok = _scanner_fixtures(api, jours, valider, max_matchs)
+        fixtures, dates_ok = _scanner_fixtures(
+            api, jours, valider, max_matchs,
+            statuts_autorises=STATUTS_UPCOMING | STATUTS_LIVE,
+        )
         out = []
         for fx in fixtures:
             r = analyser_fixture_sans_cotes(api, fx, stats_season=stats_season)
@@ -156,6 +285,62 @@ def _classement(api, league: int, season: int, home_id: int, away_id: int) -> di
     return {"groupes": groupes, "home_id": home_id, "away_id": away_id}
 
 
+def _derniers_matchs(api, team_id: int) -> list[dict]:
+    """5 derniers matchs d'une équipe avec score réel."""
+    try:
+        data = api.get("fixtures", {"team": team_id, "last": 5})
+        out = []
+        for f in data.get("response", []):
+            sh = f["score"]["fulltime"]["home"]
+            sa = f["score"]["fulltime"]["away"]
+            if sh is None or sa is None:
+                continue
+            est_dom = f["teams"]["home"]["id"] == team_id
+            resultat = (
+                "W" if (est_dom and sh > sa) or (not est_dom and sa > sh)
+                else "D" if sh == sa else "L"
+            )
+            out.append({
+                "date": f["fixture"]["date"],
+                "domicile": f["teams"]["home"]["name"],
+                "exterieur": f["teams"]["away"]["name"],
+                "score": f"{sh}-{sa}",
+                "resultat": resultat,
+                "a_domicile": est_dom,
+            })
+        return out
+    except Exception:
+        return []
+
+
+def _compos(api, fixture_id: int) -> list[dict]:
+    """Compositions (disponibles ~1h avant le match)."""
+    try:
+        data = api.get("fixtures/lineups", {"fixture": fixture_id})
+        out = []
+        for t in data.get("response", []):
+            out.append({
+                "equipe": t["team"]["name"],
+                "logo": t["team"].get("logo"),
+                "formation": t.get("formation"),
+                "titulaires": [
+                    {"numero": p["player"].get("number"),
+                     "nom": p["player"]["name"],
+                     "poste": p["player"].get("pos")}
+                    for p in t.get("startXI", [])
+                ],
+                "remplacants": [
+                    {"numero": p["player"].get("number"),
+                     "nom": p["player"]["name"],
+                     "poste": p["player"].get("pos")}
+                    for p in t.get("substitutes", [])
+                ],
+            })
+        return out
+    except Exception:
+        return []
+
+
 def _detail_match(api, fixture_id: int, stats_season: int | None = None) -> dict:
     """Construit le détail complet d'un match (probas, value, conseil, équipes)."""
     data = api.get("fixtures", {"id": fixture_id})
@@ -190,6 +375,9 @@ def _detail_match(api, fixture_id: int, stats_season: int | None = None) -> dict
         "logo": f["teams"]["away"].get("logo"),
     }
     res["classement"] = _classement(api, fx.league, fx.season, fx.home_id, fx.away_id)
+    res["derniers_matchs_dom"] = _derniers_matchs(api, fx.home_id)
+    res["derniers_matchs_ext"] = _derniers_matchs(api, fx.away_id)
+    res["compos"] = _compos(api, fixture_id)
     return res
 
 
@@ -237,6 +425,8 @@ class SelectionIn(BaseModel):
     marche: str
     cote: float
     proba: float
+    fixture_id: int = 0
+    cle: str = ""
 
 
 class TicketIn(BaseModel):
@@ -282,6 +472,15 @@ def maj_ticket(ticket_id: int, body: StatutIn):
 def del_ticket(ticket_id: int):
     store.supprimer_ticket(ticket_id)
     return {"ok": True}
+
+
+@app.post("/api/tickets/settle")
+def settle():
+    """Vérifie les résultats API-Football et grade automatiquement les tickets en_attente."""
+    try:
+        return _settle_tickets()
+    except Exception as e:
+        return JSONResponse({"erreur": str(e)}, status_code=500)
 
 
 @app.get("/api/analytics")

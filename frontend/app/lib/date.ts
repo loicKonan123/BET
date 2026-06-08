@@ -1,24 +1,23 @@
-// Affichage des dates/heures en heure du Canada (Est — Québec/Toronto).
-// L'API renvoie les heures en UTC ; on les convertit explicitement.
+// Dates/heures en heure de Montréal, format AM/PM simple.
 
 const TZ = "America/Toronto";
 
-/** Date + heure complète, ex. "jeu. 11 juin 2026, 15:00 HAE". */
+/** Date + heure complète, ex. "dim. 7 juin 2026, 9:00 AM". */
 export function dateHeureCanada(iso: string): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString("fr-CA", {
+  return new Date(iso).toLocaleString("en-CA", {
     timeZone: TZ,
     weekday: "short",
     day: "numeric",
     month: "short",
     year: "numeric",
-    hour: "2-digit",
+    hour: "numeric",
     minute: "2-digit",
-    timeZoneName: "short",
+    hour12: true,
   });
 }
 
-/** Date seule, ex. "11 juin 2026". */
+/** Date seule, ex. "7 juin 2026". */
 export function dateCanada(iso: string): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("fr-CA", {
@@ -29,13 +28,13 @@ export function dateCanada(iso: string): string {
   });
 }
 
-/** Heure seule, ex. "15:00 HAE". */
+/** Heure seule, ex. "9:00 AM". */
 export function heureCanada(iso: string): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleTimeString("fr-CA", {
+  return new Date(iso).toLocaleTimeString("en-CA", {
     timeZone: TZ,
-    hour: "2-digit",
+    hour: "numeric",
     minute: "2-digit",
-    timeZoneName: "short",
+    hour12: true,
   });
 }

@@ -8,6 +8,8 @@ export type Selection = {
   marche: string;
   cote: number;
   proba: number;
+  fixture_id?: number;
+  cle?: string;
 };
 
 export type Combine = {
@@ -21,6 +23,8 @@ export type Analyse = {
   match: string;
   ligue: string;
   fixture_id: number;
+  date?: string;
+  status?: string;
   buts_attendus: { domicile: number; exterieur: number };
   forme: { domicile: string; exterieur: string };
   probabilites: Record<string, number>;
@@ -89,6 +93,25 @@ export type Classement = {
   away_id: number;
 };
 
+export type DernierMatch = {
+  date: string;
+  domicile: string;
+  exterieur: string;
+  score: string;
+  resultat: "W" | "D" | "L";
+  a_domicile: boolean;
+};
+
+export type Joueur = { numero: number | null; nom: string; poste: string | null };
+
+export type CompoEquipe = {
+  equipe: string;
+  logo?: string;
+  formation?: string;
+  titulaires: Joueur[];
+  remplacants: Joueur[];
+};
+
 export type MatchDetail = Analyse & {
   date: string;
   home: { id: number; name: string; logo?: string };
@@ -96,6 +119,9 @@ export type MatchDetail = Analyse & {
   selections: MarketSelection[];
   conseil: Conseil | null;
   classement: Classement | null;
+  derniers_matchs_dom: DernierMatch[];
+  derniers_matchs_ext: DernierMatch[];
+  compos: CompoEquipe[];
   erreur?: string;
 };
 
@@ -136,14 +162,13 @@ export type TicketEnregistre = Combine & {
   id: number;
   cree_le: string;
   statut: "en_attente" | "gagne" | "perdu";
-  mise: number;
 };
 
-export async function sauverTicket(c: Combine, mise = 10): Promise<TicketEnregistre> {
+export async function sauverTicket(c: Combine): Promise<TicketEnregistre> {
   const r = await fetch(`${API_URL}/api/tickets`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...c, mise }),
+    body: JSON.stringify(c),
   });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
@@ -173,16 +198,18 @@ export async function supprimerTicket(id: number): Promise<void> {
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
 }
 
+export async function settlerTickets(): Promise<{ settled: number; skipped: number }> {
+  const r = await fetch(`${API_URL}/api/tickets/settle`, { method: "POST" });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
 export type Analytics = {
   total: number;
   gagnes: number;
   perdus: number;
   en_attente: number;
   taux_reussite: number;
-  mise_totale: number;
-  gain_total: number;
-  profit: number;
-  roi: number;
 };
 
 export async function getAnalytics(): Promise<Analytics> {

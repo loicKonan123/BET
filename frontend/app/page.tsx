@@ -21,15 +21,15 @@ export default function Home() {
         <div className="absolute -bottom-24 -left-24 w-80 h-80 rounded-full bg-secondary-container/10 blur-3xl pointer-events-none" />
 
         <div className="relative max-w-3xl">
-          <div className="inline-flex items-center gap-sm bg-primary/10 border border-primary/20 rounded-full px-md py-xs mb-lg">
-            <span className="relative flex h-2 w-2">
+          {/* <div className="inline-flex items-center gap-sm bg-primary/10 border border-primary/20 rounded-full px-md py-xs mb-lg"> */}
+            {/* <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
               <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
-            </span>
+            </span> */}
             {/* <span className="font-label-sm text-label-sm uppercase tracking-widest text-primary">
               Moteur statistique actif
             </span> */}
-          </div>
+          {/* </div> */}
 
           <h1 className="font-display-lg text-display-lg font-black tracking-tighter mb-md">
             <span className="text-primary">EDGE</span>
@@ -62,24 +62,18 @@ export default function Home() {
       </section>
 
       {/* SNAPSHOT LIVE */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-md mb-xl">
-        <Snap
-          label="ROI"
-          value={a ? `${a.roi >= 0 ? "+" : ""}${(a.roi * 100).toFixed(1)}%` : "—"}
-          icon="trending_up"
-          color={a && a.roi < 0 ? "error" : "primary"}
-        />
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-md mb-xl">
         <Snap
           label="Taux de réussite"
           value={a ? `${(a.taux_reussite * 100).toFixed(0)}%` : "—"}
           icon="target"
-          color="secondary"
+          color="primary"
         />
         <Snap
-          label="Profit net"
-          value={a ? `${a.profit >= 0 ? "+" : ""}${a.profit.toFixed(0)}$` : "—"}
-          icon="payments"
-          color={a && a.profit < 0 ? "error" : "primary"}
+          label="Tickets gagnés"
+          value={a ? String(a.gagnes) : "—"}
+          icon="check_circle"
+          color="secondary"
         />
         <Snap
           label="Tickets joués"
@@ -107,15 +101,11 @@ export default function Home() {
         />
         <Feature
           icon="query_stats"
-          titre="Value & suivi ROI"
-          texte="On ne garde que les paris où notre probabilité dépasse la cote. Sauvegarde tes tickets, marque-les gagnés/perdus, suis ton ROI réel."
+          titre="Suivi de précision"
+          texte="Sauvegarde les tickets générés, le modèle vérifie automatiquement les résultats et mesure la précision de ses pronostics."
         />
       </div>
 
-      <p className="font-label-sm text-label-sm text-on-surface-variant mt-xl">
-        ⚠️ Les paris sportifs comportent des risques. EDGE fournit des probabilités,
-        pas des certitudes. Jouez de manière responsable.
-      </p>
     </>
   );
 }

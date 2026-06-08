@@ -2,8 +2,8 @@
 
 Légende : ✅ fait · 🔄 en cours · ⬜ à faire
 
-EDGE = plateforme de **conseil/analyse** de paris pour Mise-o-jeu (Loto-Québec).
-On ne parie pas dans l'app : on analyse, on conseille, on suit la performance.
+EDGE = plateforme de **conseil/analyse** pour Mise-o-jeu (Loto-Québec).
+On ne mise pas dans l'app : on analyse, on conseille, on suit la précision des pronostics.
 
 ---
 
@@ -20,17 +20,25 @@ On ne parie pas dans l'app : on analyse, on conseille, on suit la performance.
 
 ### Application (Next.js + FastAPI)
 - ✅ App **EDGE** « Find the Value » — design Apex Velocity (glassmorphism)
-- ✅ Pages : Accueil (hero + snapshot) · Générer · Analyses · Performance · Historique
+- ✅ Pages : Accueil · Générer · Analyses · Performance · Historique · **Mon ticket**
 - ✅ Page **match détaillée** : conseil de paris, barre 1X2, forme, tous les marchés
-- ✅ **Classement par groupe** (CDM = groupes séparés) avec les 2 équipes surlignées
-- ✅ **Heures en heure de l'Est (Canada / Québec)**
-- ✅ Persistance des **tickets** (SQLite) + suivi gagné/perdu manuel
-- ✅ **Analytics** : ROI, taux de réussite, profit
+- ✅ **Marché recommandé** mis en évidence (couleur tertiary + étoile) dans le tableau
+- ✅ **Classement par groupe** en tabs (un groupe à la fois, scroll interne) — groupe du match auto-sélectionné
+- ✅ **Derniers matchs** avec scores réels (5 par équipe) sur la page match
+- ✅ **Compositions** sur la page match (dispo ~1h avant le match)
+- ✅ **Heures Montréal** (AM/PM, sans "HAE")
+- ✅ Filtrage : matchs déjà joués exclus des analyses · statut EN COURS affiché
+- ✅ **Light mode** — toggle, préférence mémorisée
+
+### Tickets & suivi
+- ✅ Tickets **auto-générés** (Poisson + value bets) — sauvegarde + historique
+- ✅ **Ticket builder manuel** — ajouter des sélections depuis les analyses, panier persistant (localStorage)
+- ✅ **Auto-settlement** : grading automatique (score API-Football) au chargement — déclenché uniquement si heure du match + 2h passée (protection quota API)
+- ✅ **Analytics** : taux de réussite, tickets gagnés/perdus/en attente (sans argent)
 
 ### Cerveau IA (DeepSeek)
-- ✅ Analyste **DeepSeek (reasoner)** : raisonne sur un dossier (Poisson + forme +
-  blessures + H2H + classement + pronostic API) → analyse fine + conseil nuancé
-- ✅ **Cache permanent** des analyses IA + bouton « Rafraîchir »
+- ✅ Analyste **DeepSeek (reasoner)** : raisonne sur un dossier (Poisson + forme + blessures + H2H + classement) → analyse fine + conseil nuancé
+- ✅ **Cache permanent** des analyses IA
 - ✅ Règle absolue : le LLM **ne calcule jamais** les probas (Poisson = vérité)
 
 ---
@@ -39,69 +47,50 @@ On ne parie pas dans l'app : on analyse, on conseille, on suit la performance.
 
 | Piste | Valeur | Effort | Statut |
 |-------|--------|--------|--------|
-| 🎯 **Backtest** — rejouer le modèle sur les saisons passées, mesurer le ROI réel | ⭐⭐⭐ *décisif avant de vendre* | élevé | ⬜ |
-| ✅ **Vérif. auto des résultats** — actualiser un ticket et voir tout seul s'il a gagné | ⭐⭐⭐ | moyen | ⬜ |
-| 🌗 **Light mode** — thème clair en plus du sombre (toggle) | ⭐⭐ | faible | ✅ |
+| 🎯 **Backtest** — rejouer le modèle sur les saisons passées, mesurer la précision | ⭐⭐⭐ *décisif* | élevé | ⬜ |
+| 🩹 **Blessures + H2H affichés** sur la page match (déjà récupérés pour le LLM) | ⭐⭐ | faible | ⬜ |
 | 🤖 **IA sur les combinés** — analyse globale d'un ticket entier | ⭐⭐ | moyen | ⬜ |
 | 📊 **Page Équipe dédiée** — historique complet + stats d'une équipe | ⭐⭐ | moyen | ⬜ |
-| 🩹 **Blessures + H2H affichés** sur la page match (déjà récupérés pour le LLM) | ⭐ | faible | ⬜ |
-| 🎨 **Refonte design** — nouvelle page d'accueil + logo SVG + animations | ⭐⭐ | moyen | ⬜ |
-| 🔬 **Étude avancée** — analyse approfondie d'un championnat / équipe / joueur | ⭐⭐⭐ *futur* | élevé | ⬜ |
+| 🎨 **Refonte design** — logo SVG + animations + page d'accueil | ⭐⭐ | moyen | ⬜ |
+| 🔬 **Étude avancée** — analyse d'un championnat / équipe / joueur | ⭐⭐⭐ *futur* | élevé | ⬜ |
 
-### 🎯 Backtest (LA priorité)
+### 🎯 Backtest (priorité)
 - ⬜ Rejouer le modèle sur les saisons passées (matchs terminés)
-- ⬜ Comparer la prédiction au résultat réel
-- ⬜ Mesurer **ROI / yield / taux de réussite** des combinés
+- ⬜ Comparer la prédiction au résultat réel marché par marché
+- ⬜ Mesurer **taux de réussite / yield** des combinés
 - ⬜ Vérifier que le modèle bat la clôture du marché
-- ⬜ Ne vendre aux clients QUE si rentable sur 1000+ matchs
+- ⬜ Afficher les résultats dans la page Performance
 
-### ✅ Vérification automatique des résultats (auto-settlement)
-- ⬜ Pour chaque ticket sauvegardé, récupérer le **résultat réel** des matchs (API-Football)
-- ⬜ **Grader** chaque sélection (gagnée / perdue) selon le marché (1X2, O/U, BTTS, DC)
-- ⬜ Marquer le ticket **gagné/perdu automatiquement** (combiné = toutes gagnantes)
-- ⬜ Bouton « Actualiser les résultats » + statut « en attente » tant que le match n'est pas joué
-- ⬜ Alimente l'Analytics (ROI réel) sans saisie manuelle
+### 🩹 Blessures + H2H sur la page match
+- ⬜ Afficher les **blessures/suspensions** des deux équipes (déjà récupérées pour l'IA)
+- ⬜ Afficher les **confrontations directes** (H2H) — derniers résultats face-à-face
 
-### 🌗 Light mode ✅
-- ✅ Thème clair (variables de couleur alternatives)
-- ✅ Toggle dans la barre du haut, préférence mémorisée (localStorage)
+### 🤖 IA sur les combinés
+- ⬜ Depuis la page « Mon ticket », bouton « Analyser avec l'IA »
+- ⬜ Le cerveau commente le ticket entier (cohérence, risques, cotes)
 
-### 🎨 Refonte design (identité & accueil)
-Donner à EDGE une vraie identité visuelle premium.
+### 🎨 Refonte design
+- ⬜ **Logo SVG** personnalisé (favicon + thème clair/sombre)
+- ⬜ **Animations** : apparition des cartes (stagger), micro-interactions
+- ⬜ Page d'accueil plus impactante
 
-- ⬜ **Refaire la page d'accueil** : hero plus impactant, mise en avant des
-  fonctionnalités, preuves (snapshot ROI), call-to-action soignés
-- ⬜ **Logo SVG personnalisé** (remplacer le simple texte « EDGE ») —
-  déclinable favicon + thème clair/sombre
-- ⬜ **Animations** : apparition des tickets/cartes (stagger), transitions de
-  page, micro-interactions au survol, compteurs animés (ROI, %)
-
-### 🔬 Étude avancée (fonctionnalité future)
-Module de recherche poussée, au-delà du match unique — un vrai outil d'analyste.
-
-- ⬜ **Championnat complet** : tendances de la saison (équipes en forme, moyennes
-  de buts, Over/Under dominants, domicile vs extérieur, value récurrente par marché)
-- ⬜ **Équipe** : profil détaillé — attaque/défense, forme, séries, buts par tranche
-  horaire, performance domicile/extérieur, points forts/faibles, calendrier à venir
-- ⬜ **Joueur** : stats clés (buts, passes, cartons, minutes, forme), poids dans
-  l'équipe, impact de son absence (lien avec les blessures)
-- ⬜ **Synthèse IA** : le cerveau (DeepSeek) rédige une étude lisible à partir de
-  toutes ces données (le calcul reste statistique, l'IA structure et explique)
-- ⬜ Sources API-Football : `/teams/statistics`, `/players`, `/standings`,
-  `/fixtures` (historique), `/topscorers`
+### 🔬 Étude avancée (futur)
+- ⬜ **Championnat** : tendances saison, Over/Under dominants, value récurrente
+- ⬜ **Équipe** : profil détaillé — forme, séries, buts par tranche horaire
+- ⬜ **Joueur** : stats, impact absence, lien blessures
+- ⬜ **Synthèse IA** : DeepSeek rédige une étude lisible
 
 ---
 
 ## Phase produit (plus tard)
 - ⬜ Comptes utilisateurs + abonnement (freemium / mensuel)
 - ⬜ Migration SQLite → PostgreSQL
-- ⬜ Gestion de bankroll (critère de Kelly fractionnel)
-- ⬜ Jeu responsable + conformité (Québec / Loto-Québec)
-- ⬜ Historique public vérifiable (gagnés ET perdus) pour la confiance
+- ⬜ Historique public vérifiable pour la confiance
+- ⬜ Conformité Loto-Québec
 
 ---
 
 ## Règle d'or
 Un combiné cote 3.00 ≈ 33 % de proba théorique. L'avantage ne vient pas de
 « prédire le gagnant » mais de trouver les **erreurs de cote** (value).
-**Prouver la rentabilité en backtest avant de vendre quoi que ce soit.**
+**Prouver la précision en backtest avant de vendre quoi que ce soit.**

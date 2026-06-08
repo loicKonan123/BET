@@ -488,5 +488,13 @@ def get_analytics():
     return store.analytics()
 
 
+@app.get("/api/backtest")
+def backtest(league: int, season: int, limit: int = 0):
+    from src.backtest import run_backtest
+    api = ApiFootball()
+    result = run_backtest(api, league, season, limit=limit or None)
+    return JSONResponse(result)
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)

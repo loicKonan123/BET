@@ -64,7 +64,7 @@ export default function TicketBuilderPage() {
       </div>
 
       {picks.length === 0 ? (
-        <div className="glass-card p-xl rounded-xl text-center">
+        <div className="glass-card p-8 rounded-2xl text-center max-w-120 mx-auto">
           <Icon name="add_circle" className="text-surface-container-highest" style={{ fontSize: 56 }} />
           <p className="mt-md text-on-surface-variant font-body-lg">
             Aucune sélection pour l&apos;instant.
@@ -74,67 +74,82 @@ export default function TicketBuilderPage() {
           </button>
         </div>
       ) : (
-        <>
-          <div className="flex flex-col gap-sm mb-lg">
+        <div className="max-w-[560px] mx-auto">
+          <div className="glass-card rounded-2xl overflow-hidden mb-lg">
+
+            {/* Sélections */}
             {picks.map((p, i) => (
-              <div key={i} className="glass-card p-md rounded-xl flex items-center gap-md">
+              <div
+                key={i}
+                className="flex items-center gap-md px-lg py-md"
+                style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}
+              >
                 <div className="flex flex-col flex-1 min-w-0">
-                  <span className="font-body-md text-body-md text-on-surface font-semibold truncate">{p.match}</span>
-                  <span className="font-label-sm text-label-sm text-secondary">🏆 {p.ligue} · {p.marche}</span>
+                  <span className="text-sm font-semibold text-on-surface truncate">{p.match}</span>
+                  <span className="text-xs text-on-surface-variant mt-1">
+                    {p.ligue} · <span className="text-secondary font-medium">{p.marche}</span>
+                  </span>
                 </div>
-                <div className="flex items-center gap-md flex-shrink-0">
+                <div className="flex items-center gap-md shrink-0">
                   <div className="flex flex-col items-end">
-                    <span className="font-mono font-bold text-primary">{p.cote.toFixed(2)}</span>
-                    <span className="font-label-sm text-label-sm text-on-surface-variant">{Math.round(p.proba * 100)}%</span>
+                    <span className="font-mono font-bold text-primary text-base leading-none">{p.cote.toFixed(2)}</span>
+                    <span className="text-xs text-on-surface-variant mt-1">{Math.round(p.proba * 100)}%</span>
                   </div>
                   <button
                     onClick={() => remove(p.fixture_id, p.cle)}
-                    className="w-8 h-8 rounded-lg bg-white/5 hover:bg-error/20 text-on-surface-variant hover:text-error transition-all flex items-center justify-center"
+                    className="w-7 h-7 rounded-lg hover:bg-error/20 text-on-surface-variant hover:text-error transition-all flex items-center justify-center"
                   >
-                    <Icon name="close" style={{ fontSize: 16 }} />
+                    <Icon name="close" style={{ fontSize: 14 }} />
                   </button>
                 </div>
               </div>
             ))}
-          </div>
 
-          {/* Récap */}
-          <div className="glass-card p-lg rounded-xl mb-lg border-primary/20" style={{ boxShadow: "0 0 20px rgba(78,222,163,0.08)" }}>
-            <div className="grid grid-cols-3 gap-sm mb-lg">
-              <div className="flex flex-col items-center bg-primary/10 rounded-lg p-md">
-                <span className="font-label-sm text-label-sm text-on-surface-variant mb-xs">Cote totale</span>
-                <span className="font-mono font-bold text-headline-md text-primary">{coteTotale.toFixed(2)}</span>
+            {/* Séparateur */}
+            <div
+              className="mx-lg my-sm"
+              style={{ borderTop: "1px dashed rgba(255,255,255,0.15)" }}
+            />
+
+            {/* Récap */}
+            <div className="px-lg pb-lg">
+              <div className="grid grid-cols-3 gap-sm mb-lg">
+                <div className="flex flex-col items-center rounded-xl p-md" style={{ background: "rgba(78,222,163,0.08)" }}>
+                  <span className="text-xs text-on-surface-variant mb-1">Cote totale</span>
+                  <span className="font-mono font-bold text-2xl text-primary">{coteTotale.toFixed(2)}</span>
+                </div>
+                <div className="flex flex-col items-center rounded-xl p-md" style={{ background: "rgba(173,198,255,0.08)" }}>
+                  <span className="text-xs text-on-surface-variant mb-1">Proba</span>
+                  <span className="font-mono font-bold text-2xl text-secondary">{Math.round(probaReussite * 100)}%</span>
+                </div>
+                <div className="flex flex-col items-center rounded-xl p-md" style={{ background: "rgba(255,185,95,0.08)" }}>
+                  <span className="text-xs text-on-surface-variant mb-1">Sélections</span>
+                  <span className="font-mono font-bold text-2xl text-tertiary">{picks.length}</span>
+                </div>
               </div>
-              <div className="flex flex-col items-center bg-secondary/10 rounded-lg p-md">
-                <span className="font-label-sm text-label-sm text-on-surface-variant mb-xs">Proba</span>
-                <span className="font-mono font-bold text-headline-md text-secondary">{Math.round(probaReussite * 100)}%</span>
-              </div>
-              <div className="flex flex-col items-center bg-tertiary/10 rounded-lg p-md">
-                <span className="font-label-sm text-label-sm text-on-surface-variant mb-xs">Sélections</span>
-                <span className="font-mono font-bold text-headline-md text-tertiary">{picks.length}</span>
+
+              {erreur && <p className="text-error text-sm mb-md">{erreur}</p>}
+
+              <div className="flex gap-sm">
+                <button
+                  onClick={sauver}
+                  disabled={saving}
+                  className="flex-1 flex items-center justify-center gap-sm bg-primary text-on-primary font-semibold px-lg py-md rounded-xl hover:shadow-[0_0_20px_rgba(78,222,163,0.3)] transition-all active:scale-95 disabled:opacity-50"
+                >
+                  <Icon name="bookmark_add" style={{ fontSize: 20 }} />
+                  {saving ? "Sauvegarde…" : "Sauvegarder le ticket"}
+                </button>
+                <button
+                  onClick={clear}
+                  className="px-lg py-md hover:bg-error/10 text-on-surface-variant hover:text-error rounded-xl transition-all text-sm"
+                  style={{ background: "rgba(255,255,255,0.05)" }}
+                >
+                  Tout effacer
+                </button>
               </div>
             </div>
-
-            {erreur && <p className="text-error font-label-md mb-md">{erreur}</p>}
-
-            <div className="flex gap-sm">
-              <button
-                onClick={sauver}
-                disabled={saving}
-                className="flex-1 flex items-center justify-center gap-sm bg-primary text-on-primary font-headline-sm px-lg py-md rounded-xl hover:shadow-[0_0_20px_rgba(78,222,163,0.3)] transition-all active:scale-95 disabled:opacity-50"
-              >
-                <Icon name="bookmark_add" style={{ fontSize: 20 }} />
-                {saving ? "Sauvegarde…" : "Sauvegarder le ticket"}
-              </button>
-              <button
-                onClick={clear}
-                className="px-lg py-md bg-white/5 hover:bg-error/10 text-on-surface-variant hover:text-error rounded-xl transition-all font-label-md"
-              >
-                Tout effacer
-              </button>
-            </div>
           </div>
-        </>
+        </div>
       )}
     </>
   );

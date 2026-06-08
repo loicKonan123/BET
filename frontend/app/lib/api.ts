@@ -217,3 +217,41 @@ export async function getAnalytics(): Promise<Analytics> {
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
+
+// ---- Backtest ----
+export type BacktestMatch = {
+  fixture_id: number; match: string; date: string; score: string;
+  pred_1x2: string;    reel_1x2: string;    bon_1x2: boolean;
+  pred_over25: string; reel_over25: string; bon_over25: boolean;
+  pred_over15: string; reel_over15: string; bon_over15: boolean;
+  pred_btts: string;   reel_btts: string;   bon_btts: boolean;
+  pred_dc_12: string;  bon_dc_12: boolean;
+  pred_dc_1x: string;  bon_dc_1x: boolean;
+  lam_dom: number; lam_ext: number;
+};
+
+export type BacktestResult = {
+  league_id: number; ligue: string; saison: number; total_matches: number;
+  accuracy_1x2: number; ok_1x2: number;
+  accuracy_over25: number;  ok_over25: number;  n_over25: number;
+  accuracy_under25: number; ok_under25: number; n_under25: number;
+  accuracy_over15: number;  ok_over15: number;  n_over15: number;
+  accuracy_under15: number; ok_under15: number; n_under15: number;
+  accuracy_btts_oui: number; ok_btts_oui: number; n_btts_oui: number;
+  accuracy_btts_non: number; ok_btts_non: number; n_btts_non: number;
+  accuracy_dc_12: number; ok_dc_12: number; n_dc_12: number;
+  accuracy_dc_1x: number; ok_dc_1x: number; n_dc_1x: number;
+  matchs: BacktestMatch[];
+};
+
+export async function runBacktest(
+  league: number,
+  season: number,
+  limit: number = 0
+): Promise<BacktestResult> {
+  const r = await fetch(
+    `${API_URL}/api/backtest?league=${league}&season=${season}&limit=${limit}`
+  );
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}

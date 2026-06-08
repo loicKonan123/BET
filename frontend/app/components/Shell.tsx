@@ -10,6 +10,7 @@ const NAV = [
   { href: "/", label: "Accueil", icon: "home" },
   { href: "/generate", label: "Générer", icon: "bolt" },
   { href: "/analyses", label: "Analyses", icon: "insights" },
+  { href: "/backtest", label: "Backtest", icon: "science" },
   { href: "/analytics", label: "Performance", icon: "analytics" },
   { href: "/history", label: "Historique", icon: "history" },
 ];
@@ -85,8 +86,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Contenu */}
-      <main className="pt-24 pb-24 md:ml-64 px-margin-mobile md:px-xl min-h-screen">
-        {children}
+      <main className="pt-24 pb-24 md:ml-64 min-h-screen">
+        <div className="max-w-7xl mx-auto px-margin-mobile md:px-xl">
+          {children}
+        </div>
       </main>
 
       {/* Nav mobile */}

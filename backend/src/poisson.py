@@ -36,6 +36,8 @@ class MatchProbabilities:
     away_win: float
     over_25: float
     under_25: float
+    over_15: float
+    under_15: float
     btts_yes: float   # les deux équipes marquent
     btts_no: float
     expected_home_goals: float
@@ -56,6 +58,8 @@ class MatchProbabilities:
             "2": self.away_win,
             "over_2.5": self.over_25,
             "under_2.5": self.under_25,
+            "over_1.5": self.over_15,
+            "under_1.5": self.under_15,
             "btts_oui": self.btts_yes,
             "btts_non": self.btts_no,
             "1X": self.home_win + self.draw,
@@ -87,7 +91,7 @@ def compute_probabilities(
 ) -> MatchProbabilities:
     """Construit la grille de tous les scores possibles et agrège les marchés."""
     p_home = p_draw = p_away = 0.0
-    p_over = p_btts = 0.0
+    p_over25 = p_over15 = p_btts = 0.0
 
     for hg in range(max_goals + 1):
         for ag in range(max_goals + 1):
@@ -101,7 +105,9 @@ def compute_probabilities(
                 p_away += p
 
             if hg + ag > 2.5:
-                p_over += p
+                p_over25 += p
+            if hg + ag > 1.5:
+                p_over15 += p
             if hg >= 1 and ag >= 1:
                 p_btts += p
 
@@ -109,8 +115,10 @@ def compute_probabilities(
         home_win=p_home,
         draw=p_draw,
         away_win=p_away,
-        over_25=p_over,
-        under_25=1 - p_over,
+        over_25=p_over25,
+        under_25=1 - p_over25,
+        over_15=p_over15,
+        under_15=1 - p_over15,
         btts_yes=p_btts,
         btts_no=1 - p_btts,
         expected_home_goals=lam_home,

@@ -29,6 +29,7 @@ On ne mise pas dans l'app : on analyse, on conseille, on suit la précision des 
 - ✅ **Heures Montréal** (AM/PM, sans "HAE")
 - ✅ Filtrage : matchs déjà joués exclus des analyses · statut EN COURS affiché
 - ✅ **Light mode** — toggle, préférence mémorisée
+- ✅ **Layout responsive** — max-width sur grand écran (32 pouces), centré
 
 ### Tickets & suivi
 - ✅ Tickets **auto-générés** (Poisson + value bets) — sauvegarde + historique
@@ -47,19 +48,19 @@ On ne mise pas dans l'app : on analyse, on conseille, on suit la précision des 
 
 | Piste | Valeur | Effort | Statut |
 |-------|--------|--------|--------|
-| 🎯 **Backtest** — rejouer le modèle sur les saisons passées, mesurer la précision | ⭐⭐⭐ *décisif* | élevé | ⬜ |
+| 🎯 **Backtest** — rejouer le modèle sur les saisons passées, mesurer la précision | ⭐⭐⭐ *décisif* | élevé | ✅ |
 | 🩹 **Blessures + H2H affichés** sur la page match (déjà récupérés pour le LLM) | ⭐⭐ | faible | ⬜ |
 | 🤖 **IA sur les combinés** — analyse globale d'un ticket entier | ⭐⭐ | moyen | ⬜ |
 | 📊 **Page Équipe dédiée** — historique complet + stats d'une équipe | ⭐⭐ | moyen | ⬜ |
 | 🎨 **Refonte design** — logo SVG + animations + page d'accueil | ⭐⭐ | moyen | ⬜ |
 | 🔬 **Étude avancée** — analyse d'un championnat / équipe / joueur | ⭐⭐⭐ *futur* | élevé | ⬜ |
 
-### 🎯 Backtest (priorité)
-- ⬜ Rejouer le modèle sur les saisons passées (matchs terminés)
-- ⬜ Comparer la prédiction au résultat réel marché par marché
-- ⬜ Mesurer **taux de réussite / yield** des combinés
-- ⬜ Vérifier que le modèle bat la clôture du marché
-- ⬜ Afficher les résultats dans la page Performance
+### 🎯 Backtest ✅
+- ✅ Rejouer le modèle sur les saisons passées (matchs terminés)
+- ✅ Comparer la prédiction au résultat réel marché par marché (1X2, Over/Under 2.5, Over/Under 1.5, BTTS, double chance)
+- ✅ Accuracy **séparée par direction** (quand modèle prédit "Plus" vs "Moins")
+- ✅ Page `/backtest` — sélecteur ligue / saison / volume, jauges animées
+- ⬜ Mesurer yield si on avait suivi les value bets (nécessite les cotes historiques)
 
 ### 🩹 Blessures + H2H sur la page match
 - ⬜ Afficher les **blessures/suspensions** des deux équipes (déjà récupérées pour l'IA)
@@ -87,6 +88,13 @@ On ne mise pas dans l'app : on analyse, on conseille, on suit la précision des 
 - ⬜ Migration SQLite → PostgreSQL
 - ⬜ Historique public vérifiable pour la confiance
 - ⬜ Conformité Loto-Québec
+
+## 📱 App mobile Flutter
+- ⬜ Application Flutter (iOS + Android)
+- ⬜ Mêmes pages : Accueil · Générer · Analyses · Mon ticket · Historique · Performance
+- ⬜ Consomme la même API FastAPI (backend partagé)
+- ⬜ Notifications push — alertes avant les matchs analysés
+- ⬜ Design adapté mobile (bottom nav, cards natives Flutter)
 
 ---
 

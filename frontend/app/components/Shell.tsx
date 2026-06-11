@@ -4,10 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTicketBuilder } from "../lib/useTicketBuilder";
 import Icon from "./Icon";
+import LiveWidget from "./LiveWidget";
 import ThemeToggle from "./ThemeToggle";
 
 const NAV = [
   { href: "/", label: "Accueil", icon: "home" },
+  { href: "/scores", label: "Scores", icon: "scoreboard" },
   { href: "/generate", label: "Générer", icon: "bolt" },
   { href: "/analyses", label: "Analyses", icon: "insights" },
   { href: "/backtest", label: "Backtest", icon: "science" },
@@ -62,6 +64,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               </Link>
             );
           })}
+
+          {/* Live matches */}
+          <LiveWidget />
 
           {/* Ticket builder */}
           <Link

@@ -102,7 +102,15 @@ export type DernierMatch = {
   a_domicile: boolean;
 };
 
-export type Joueur = { numero: number | null; nom: string; poste: string | null };
+export type Joueur = { id?: number; numero: number | null; nom: string; poste: string | null; grid?: string };
+
+export type H2HMatch = {
+  date: string;
+  domicile: string;
+  exterieur: string;
+  score: string;
+  home_id: number;
+};
 
 export type CompoEquipe = {
   equipe: string;
@@ -122,6 +130,7 @@ export type MatchDetail = Analyse & {
   derniers_matchs_dom: DernierMatch[];
   derniers_matchs_ext: DernierMatch[];
   compos: CompoEquipe[];
+  h2h: H2HMatch[];
   erreur?: string;
 };
 
@@ -243,6 +252,151 @@ export type BacktestResult = {
   accuracy_dc_1x: number; ok_dc_1x: number; n_dc_1x: number;
   matchs: BacktestMatch[];
 };
+
+// ---- Équipe ----
+export type TeamMatch = {
+  fixture_id: number;
+  date: string;
+  ligue: string;
+  ligue_logo?: string;
+  adversaire_id: number;
+  adversaire: string;
+  adversaire_logo?: string;
+  a_domicile: boolean;
+  score: string;
+  resultat: "W" | "D" | "L";
+  buts_pour: number;
+  buts_contre: number;
+};
+
+export type TeamDetail = {
+  id: number;
+  nom: string;
+  logo?: string;
+  pays?: string;
+  stade?: string;
+  ville?: string;
+  stats: {
+    matchs: number;
+    victoires: number;
+    nuls: number;
+    defaites: number;
+    buts_pour: number;
+    buts_contre: number;
+    moy_bp: number;
+    moy_bc: number;
+  };
+  forme: string;
+  matchs: TeamMatch[];
+};
+
+export async function getTeam(teamId: number): Promise<TeamDetail> {
+  const r = await fetch(`${API_URL}/api/team/${teamId}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+// ---- Joueur ----
+export type PlayerDetail = {
+  id: number;
+  nom: string;
+  prenom?: string;
+  nom_famille?: string;
+  photo?: string;
+  nationalite?: string;
+  naissance?: string;
+  taille?: string;
+  poids?: string;
+  poste?: string;
+  equipe_id?: number;
+  equipe?: string;
+  equipe_logo?: string;
+  saison: number;
+  stats: {
+    matchs: number;
+    titularisations: number;
+    minutes: number;
+    buts: number;
+    passes_decisives: number;
+    cartons_jaunes: number;
+    cartons_rouges: number;
+    passes: number;
+    note?: string;
+  };
+};
+
+export async function getPlayer(playerId: number): Promise<PlayerDetail> {
+  const r = await fetch(`${API_URL}/api/player/${playerId}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+// ---- Live ----
+export type LiveMatch = {
+  fixture_id: number;
+  status: string;
+  elapsed: number | null;
+  ligue: string;
+  ligue_logo?: string;
+  home: { id: number; name: string; logo?: string };
+  away: { id: number; name: string; logo?: string };
+  score: { home: number; away: number };
+};
+
+export type LiveEvent = {
+  elapsed: number;
+  extra?: number;
+  type: string;   // "Goal" | "Card" | "subst" | "Var"
+  detail?: string;
+  team_id: number;
+  player?: string;
+  assist?: string;
+};
+
+export type LiveScore = {
+  fixture_id: number;
+  status: string;
+  elapsed: number | null;
+  score: { home: number; away: number };
+  events: LiveEvent[];
+};
+
+// ---- Scores (navigation par date) ----
+export type ScoreMatch = {
+  fixture_id: number;
+  status: string;
+  elapsed: number | null;
+  heure: string;
+  ligue_id: number;
+  ligue: string;
+  ligue_logo?: string;
+  home: { id: number; name: string; logo?: string };
+  away: { id: number; name: string; logo?: string };
+  score: { home: number | null; away: number | null };
+};
+
+export type ScoresJour = {
+  date: string;
+  matchs: ScoreMatch[];
+};
+
+export async function getScores(date: string): Promise<ScoresJour> {
+  const r = await fetch(`${API_URL}/api/scores?date_str=${date}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+export async function getLiveMatches(): Promise<LiveMatch[]> {
+  const r = await fetch(`${API_URL}/api/live`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+export async function getLiveScore(fixtureId: number): Promise<LiveScore> {
+  const r = await fetch(`${API_URL}/api/score/${fixtureId}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
 
 export async function runBacktest(
   league: number,

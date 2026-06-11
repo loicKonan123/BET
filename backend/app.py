@@ -313,6 +313,28 @@ def _derniers_matchs(api, team_id: int) -> list[dict]:
         return []
 
 
+def _h2h(api, home_id: int, away_id: int) -> list[dict]:
+    """5 dernières confrontations directes."""
+    try:
+        data = api.get("fixtures", {"h2h": f"{home_id}-{away_id}", "last": 5})
+        out = []
+        for f in data.get("response", []):
+            sh = f["score"]["fulltime"]["home"]
+            sa = f["score"]["fulltime"]["away"]
+            if sh is None or sa is None:
+                continue
+            out.append({
+                "date": f["fixture"]["date"],
+                "domicile": f["teams"]["home"]["name"],
+                "exterieur": f["teams"]["away"]["name"],
+                "score": f"{sh}-{sa}",
+                "home_id": f["teams"]["home"]["id"],
+            })
+        return out
+    except Exception:
+        return []
+
+
 def _compos(api, fixture_id: int) -> list[dict]:
     """Compositions (disponibles ~1h avant le match)."""
     try:
@@ -324,13 +346,16 @@ def _compos(api, fixture_id: int) -> list[dict]:
                 "logo": t["team"].get("logo"),
                 "formation": t.get("formation"),
                 "titulaires": [
-                    {"numero": p["player"].get("number"),
+                    {"id": p["player"].get("id"),
+                     "numero": p["player"].get("number"),
                      "nom": p["player"]["name"],
-                     "poste": p["player"].get("pos")}
+                     "poste": p["player"].get("pos"),
+                     "grid": p["player"].get("grid")}
                     for p in t.get("startXI", [])
                 ],
                 "remplacants": [
-                    {"numero": p["player"].get("number"),
+                    {"id": p["player"].get("id"),
+                     "numero": p["player"].get("number"),
                      "nom": p["player"]["name"],
                      "poste": p["player"].get("pos")}
                     for p in t.get("substitutes", [])
@@ -377,6 +402,7 @@ def _detail_match(api, fixture_id: int, stats_season: int | None = None) -> dict
     res["classement"] = _classement(api, fx.league, fx.season, fx.home_id, fx.away_id)
     res["derniers_matchs_dom"] = _derniers_matchs(api, fx.home_id)
     res["derniers_matchs_ext"] = _derniers_matchs(api, fx.away_id)
+    res["h2h"] = _h2h(api, fx.home_id, fx.away_id)
     res["compos"] = _compos(api, fixture_id)
     return res
 
@@ -494,6 +520,261 @@ def backtest(league: int, season: int, limit: int = 0):
     api = ApiFootball()
     result = run_backtest(api, league, season, limit=limit or None)
     return JSONResponse(result)
+
+
+# ===================== Équipes & Joueurs =====================
+
+@app.get("/api/team/{team_id}")
+def team_detail(team_id: int):
+    """Profil complet d'une équipe : infos, forme, 15 derniers matchs, stats."""
+    try:
+        api = ApiFootball()
+        team_data = api.get("teams", {"id": team_id})
+        team_resp = team_data.get("response", [])
+        if not team_resp:
+            raise HTTPException(status_code=404, detail="Équipe introuvable")
+
+        team  = team_resp[0]["team"]
+        venue = team_resp[0].get("venue", {})
+
+        fix_data = api.get("fixtures", {"team": team_id, "last": 15})
+        matchs = []
+        for f in fix_data.get("response", []):
+            sh = f["score"]["fulltime"]["home"]
+            sa = f["score"]["fulltime"]["away"]
+            if sh is None or sa is None:
+                continue
+            est_dom = f["teams"]["home"]["id"] == team_id
+            res = ("W" if (est_dom and sh > sa) or (not est_dom and sa > sh)
+                   else "D" if sh == sa else "L")
+            matchs.append({
+                "fixture_id": f["fixture"]["id"],
+                "date": f["fixture"]["date"],
+                "ligue": f["league"]["name"],
+                "ligue_logo": f["league"].get("logo"),
+                "adversaire_id": f["teams"]["away"]["id"] if est_dom else f["teams"]["home"]["id"],
+                "adversaire": f["teams"]["away"]["name"] if est_dom else f["teams"]["home"]["name"],
+                "adversaire_logo": f["teams"]["away"].get("logo") if est_dom else f["teams"]["home"].get("logo"),
+                "a_domicile": est_dom,
+                "score": f"{sh}-{sa}",
+                "resultat": res,
+                "buts_pour": sh if est_dom else sa,
+                "buts_contre": sa if est_dom else sh,
+            })
+
+        nb = len(matchs)
+        wins   = sum(1 for m in matchs if m["resultat"] == "W")
+        draws  = sum(1 for m in matchs if m["resultat"] == "D")
+        losses = sum(1 for m in matchs if m["resultat"] == "L")
+        bp = sum(m["buts_pour"] for m in matchs)
+        bc = sum(m["buts_contre"] for m in matchs)
+
+        return JSONResponse({
+            "id": team["id"],
+            "nom": team["name"],
+            "logo": team.get("logo"),
+            "pays": team.get("country"),
+            "stade": venue.get("name"),
+            "ville": venue.get("city"),
+            "stats": {
+                "matchs": nb,
+                "victoires": wins,
+                "nuls": draws,
+                "defaites": losses,
+                "buts_pour": bp,
+                "buts_contre": bc,
+                "moy_bp": round(bp / nb, 2) if nb else 0,
+                "moy_bc": round(bc / nb, 2) if nb else 0,
+            },
+            "forme": "".join(m["resultat"] for m in matchs[-5:]),
+            "matchs": matchs,
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        return JSONResponse({"erreur": str(e)}, status_code=500)
+
+
+@app.get("/api/player/{player_id}")
+def player_detail(player_id: int):
+    """Profil d'un joueur : infos + stats de la saison en cours."""
+    try:
+        from datetime import date as dt_date
+        api  = ApiFootball()
+        season = dt_date.today().year if dt_date.today().month >= 7 else dt_date.today().year - 1
+        data = api.get("players", {"id": player_id, "season": season})
+        resp = data.get("response", [])
+        if not resp:
+            raise HTTPException(status_code=404, detail="Joueur introuvable")
+
+        p     = resp[0]["player"]
+        stats = resp[0].get("statistics", [{}])[0]
+        team  = stats.get("team", {})
+        games = stats.get("games", {})
+        goals = stats.get("goals", {})
+        cards = stats.get("cards", {})
+        passes_stat = stats.get("passes", {})
+
+        return JSONResponse({
+            "id": p["id"],
+            "nom": p["name"],
+            "prenom": p.get("firstname"),
+            "nom_famille": p.get("lastname"),
+            "photo": p.get("photo"),
+            "nationalite": p.get("nationality"),
+            "naissance": p.get("birth", {}).get("date"),
+            "taille": p.get("height"),
+            "poids": p.get("weight"),
+            "poste": games.get("position"),
+            "equipe_id": team.get("id"),
+            "equipe": team.get("name"),
+            "equipe_logo": team.get("logo"),
+            "saison": season,
+            "stats": {
+                "matchs": games.get("appearences") or 0,
+                "titularisations": games.get("lineups") or 0,
+                "minutes": games.get("minutes") or 0,
+                "buts": goals.get("total") or 0,
+                "passes_decisives": goals.get("assists") or 0,
+                "cartons_jaunes": cards.get("yellow") or 0,
+                "cartons_rouges": cards.get("red") or 0,
+                "passes": passes_stat.get("total") or 0,
+                "note": games.get("rating"),
+            },
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        return JSONResponse({"erreur": str(e)}, status_code=500)
+
+
+# ===================== Scores (navigation par date) =====================
+
+@app.get("/api/scores")
+def scores_du_jour(date_str: str = ""):
+    """Tous les matchs d'une date dans nos ligues — passés, live, à venir."""
+    try:
+        from datetime import date as dt_date
+        target = date_str or dt_date.today().isoformat()
+        api = ApiFootball()
+        data = api.get("fixtures", {"date": target})
+        resp = data.get("response", [])
+        ids_autorises = set(IDS_SOCCER)
+        out = []
+        for f in resp:
+            if f["league"]["id"] not in ids_autorises:
+                continue
+            status = f["fixture"]["status"]["short"]
+            goals = f["goals"]
+            out.append({
+                "fixture_id": f["fixture"]["id"],
+                "status": status,
+                "elapsed": f["fixture"]["status"].get("elapsed"),
+                "heure": f["fixture"]["date"],
+                "ligue_id": f["league"]["id"],
+                "ligue": f["league"]["name"],
+                "ligue_logo": f["league"].get("logo"),
+                "home": {
+                    "id": f["teams"]["home"]["id"],
+                    "name": f["teams"]["home"]["name"],
+                    "logo": f["teams"]["home"].get("logo"),
+                },
+                "away": {
+                    "id": f["teams"]["away"]["id"],
+                    "name": f["teams"]["away"]["name"],
+                    "logo": f["teams"]["away"].get("logo"),
+                },
+                "score": {
+                    "home": goals["home"] if goals["home"] is not None else None,
+                    "away": goals["away"] if goals["away"] is not None else None,
+                },
+            })
+        # Trie par heure
+        out.sort(key=lambda x: x["heure"])
+        return JSONResponse({"date": target, "matchs": out})
+    except Exception as e:
+        return JSONResponse({"erreur": str(e)}, status_code=500)
+
+
+# ===================== Live =====================
+
+STATUTS_EN_COURS = {"1H", "HT", "2H", "ET", "BT", "P", "INT", "LIVE"}
+
+
+@app.get("/api/live")
+def live_matches():
+    """Tous les matchs en cours dans nos ligues, temps réel (sans cache)."""
+    try:
+        api = ApiFootball()
+        data = api.get("fixtures", {"live": "all"}, use_cache=False)
+        resp = data.get("response", [])
+        ids_autorises = set(IDS_SOCCER)
+        out = []
+        for f in resp:
+            if f["league"]["id"] not in ids_autorises:
+                continue
+            out.append({
+                "fixture_id": f["fixture"]["id"],
+                "status": f["fixture"]["status"]["short"],
+                "elapsed": f["fixture"]["status"].get("elapsed"),
+                "ligue": f["league"]["name"],
+                "ligue_logo": f["league"].get("logo"),
+                "home": {
+                    "id": f["teams"]["home"]["id"],
+                    "name": f["teams"]["home"]["name"],
+                    "logo": f["teams"]["home"].get("logo"),
+                },
+                "away": {
+                    "id": f["teams"]["away"]["id"],
+                    "name": f["teams"]["away"]["name"],
+                    "logo": f["teams"]["away"].get("logo"),
+                },
+                "score": {
+                    "home": f["goals"]["home"] if f["goals"]["home"] is not None else 0,
+                    "away": f["goals"]["away"] if f["goals"]["away"] is not None else 0,
+                },
+            })
+        return JSONResponse(out)
+    except Exception as e:
+        return JSONResponse({"erreur": str(e)}, status_code=500)
+
+
+@app.get("/api/score/{fixture_id}")
+def score_live(fixture_id: int):
+    """Score + événements en temps réel d'un match (sans cache)."""
+    try:
+        api = ApiFootball()
+        data = api.get("fixtures", {"id": fixture_id}, use_cache=False)
+        resp = data.get("response", [])
+        if not resp:
+            raise HTTPException(status_code=404, detail="Match introuvable")
+        f = resp[0]
+        events = []
+        for e in f.get("events", []):
+            events.append({
+                "elapsed": e["time"]["elapsed"],
+                "extra": e["time"].get("extra"),
+                "type": e["type"],
+                "detail": e.get("detail"),
+                "team_id": e["team"]["id"],
+                "player": e["player"].get("name") if e.get("player") else None,
+                "assist": e["assist"].get("name") if e.get("assist") else None,
+            })
+        goals = f["goals"]
+        return JSONResponse({
+            "fixture_id": fixture_id,
+            "status": f["fixture"]["status"]["short"],
+            "elapsed": f["fixture"]["status"].get("elapsed"),
+            "score": {
+                "home": goals["home"] if goals["home"] is not None else 0,
+                "away": goals["away"] if goals["away"] is not None else 0,
+            },
+            "events": events,
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        return JSONResponse({"erreur": str(e)}, status_code=500)
 
 
 if __name__ == "__main__":

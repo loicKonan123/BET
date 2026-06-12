@@ -9,14 +9,24 @@ On ne mise pas dans l'app : on analyse, on conseille, on suit la précision des 
 
 ## ✅ Déjà fait
 
-### Moteur statistique
+### Moteur statistique — refonte multi-modèles (état de l'art)
 - ✅ Client API-Football (**PRO**) + cache disque + anti rate-limit
 - ✅ Moteur **Poisson** (1X2, Over/Under 2.5, Over/Under 1.5, BTTS, double chance)
-- ✅ Stats équipes → buts attendus — mode **club** ET mode **équipes nationales** (CDM)
+- ✅ **Correction Dixon-Coles (τ, rho ≈ -0.13)** — corrige la sous-estimation des scores faibles (0-0, 1-0, 0-1, 1-1)
+- ✅ **Pondération temporelle (time-decay, ξ=0.003/j)** — la forme récente pèse plus que les matchs anciens
+- ✅ **Système Elo maison** (style World Football Elo / 538) — note de force globale, K par compétition (CDM=60), multiplicateur de marge de victoire → **corrige la force de calendrier** (le bug Mexico/RSA)
+- ✅ **Ancrage marché** — cotes converties en probas avec **marge (vig) retirée** ; le closing line = meilleur prédicteur connu
+- ✅ **Fusion consensus pondérée** (Poisson 23% + Elo 27% + Marché 50%) + mesure d'**accord entre modèles**
+- ✅ Stats équipes → buts attendus — mode **club** ET mode **équipes nationales** (stats dom/ext séparées)
 - ✅ Détection des **value bets** + génération de **combinés** (cote ~3.00)
 - ✅ Validateur **Mise-o-jeu** (liste blanche) → jamais de match injouable
 - ✅ Scan automatique multi-dates
 - ✅ Cotes consensus (~13 bookmakers, dont Pinnacle)
+
+### Mesure de qualité (crédibilité du modèle)
+- ✅ **Brier score** + **Log-loss** dans le backtest — mesure scientifique de la calibration
+- ✅ **Courbe de calibration** (proba prédite vs réussite réelle) affichée sur `/backtest`
+- ✅ Référence : log-loss < 0.99 = on bat le marché (atteint : 0.85 sur EPL 2023)
 
 ### Application web (Next.js + FastAPI)
 - ✅ Design **Apex Velocity** — glassmorphism, thème clair/sombre
@@ -35,9 +45,12 @@ On ne mise pas dans l'app : on analyse, on conseille, on suit la précision des 
 - ✅ Analytics : taux de réussite, tickets gagnés/perdus/en attente
 
 ### Cerveau IA (DeepSeek)
-- ✅ Analyste DeepSeek (reasoner) : raisonne sur un dossier complet → analyse + conseil nuancé
+- ✅ Analyste DeepSeek (reasoner) : raisonne sur dossier complet → **produit ses propres probabilités finales**
 - ✅ Cache permanent des analyses IA
-- ✅ Règle absolue : le LLM ne calcule jamais les probas (Poisson = vérité)
+- ✅ **Nouveau pipeline IA** : Poisson = référence statistique (input), DeepSeek = prédicteur final
+- ✅ Dossier enrichi : H2H, forme dom/ext séparées, blessures, contexte tournoi, nations hôtes WC
+- ✅ **Fix modèle national** : stats dom/ext séparées pour sélections nationales (plus de terrain neutre forcé)
+- ✅ **Bonus hôtes WC 2026** : Mexico/USA/Canada reconnus comme terrain réel (signalé à l'IA)
 
 ### Backtest
 - ✅ Rejouer le modèle sur les saisons passées (matchs terminés)
@@ -134,11 +147,16 @@ backend/               ← FastAPI, Python
   app.py               ← tous les endpoints
   src/
     api_client.py      ← client API-Football + cache disque
-    poisson.py         ← modèle Poisson + marchés
+    poisson.py         ← modèle Poisson + correction Dixon-Coles
+    elo.py             ← moteur Elo (math pure) + buts attendus
+    elo_service.py     ← construction/cache des ratings Elo
+    blend.py           ← fusion consensus Poisson+Elo+Marché
+    odds_parser.py     ← cotes consensus + retrait de la vig
+    team_stats.py      ← stats dom/ext + pondération temporelle
     pipeline.py        ← scan fixtures + analyse
-    backtest.py        ← replay modèle sur historique
-    analyste.py        ← cerveau DeepSeek
-    store.py           ← SQLite (tickets, analyses IA)
+    backtest.py        ← replay modèle + Brier/log-loss/calibration
+    analyste.py        ← cerveau DeepSeek (arbitre final, voit les 3 modèles)
+    store.py           ← SQLite (tickets, analyses IA, ratings Elo)
     ligues_mise_o_jeu.py ← liste blanche Mise-o-jeu
 
 docs/

@@ -21,6 +21,13 @@ from .team_stats import buts_attendus, recuperer_stats, recuperer_stats_national
 def _nom_ligue(league_id: int) -> str:
     return LIGUES_SOCCER.get(league_id, f"Ligue {league_id}")
 
+
+def _score(fx) -> dict | None:
+    """Score réel {domicile, exterieur} si connu (live/terminé), sinon None."""
+    if fx.buts_dom is None or fx.buts_ext is None:
+        return None
+    return {"domicile": fx.buts_dom, "exterieur": fx.buts_ext}
+
 # Compétitions de sélections nationales -> on calcule la force via les
 # derniers matchs internationaux, pas via une saison de ligue.
 LIGUES_NATIONALES = {
@@ -69,6 +76,8 @@ class FixtureInfo:
     away_name: str
     date: str = ""    # datetime ISO du coup d'envoi
     status: str = "NS"  # code statut API-Football
+    buts_dom: int | None = None  # score réel (live ou terminé)
+    buts_ext: int | None = None
 
 
 STATUTS_UPCOMING = {"NS", "TBD"}
@@ -107,6 +116,8 @@ def fixtures_depuis_reponse(
             away_name=f["teams"]["away"]["name"],
             date=f["fixture"].get("date", ""),
             status=status,
+            buts_dom=f.get("goals", {}).get("home"),
+            buts_ext=f.get("goals", {}).get("away"),
         ))
     return out
 
@@ -160,6 +171,7 @@ def analyser_fixture(
         "fixture_id": fx.fixture_id,
         "date": fx.date,
         "status": fx.status,
+        "score": _score(fx),
         "buts_attendus": {"domicile": round(lam_dom, 2), "exterieur": round(lam_ext, 2)},
         "forme": {"domicile": dom.forme[-5:], "exterieur": ext.forme[-5:]},
         "probabilites": {k: round(v, 4) for k, v in probas.items()},
@@ -198,6 +210,7 @@ def analyser_fixture_sans_cotes(
         "fixture_id": fx.fixture_id,
         "date": fx.date,
         "status": fx.status,
+        "score": _score(fx),
         "buts_attendus": {"domicile": round(lam_dom, 2), "exterieur": round(lam_ext, 2)},
         "forme": {"domicile": dom.forme[-5:], "exterieur": ext.forme[-5:]},
         "probabilites": {k: round(v, 4) for k, v in probas.items()},

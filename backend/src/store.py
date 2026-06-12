@@ -47,6 +47,19 @@ def init_db() -> None:
             )
             """
         )
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS elo_ratings (
+                scope       TEXT NOT NULL,
+                team_id     INTEGER NOT NULL,
+                nom         TEXT,
+                rating      REAL NOT NULL,
+                n_matchs    INTEGER NOT NULL DEFAULT 0,
+                maj_le      TEXT NOT NULL,
+                PRIMARY KEY (scope, team_id)
+            )
+            """
+        )
 
 
 def _row_to_dict(r: sqlite3.Row) -> dict:
@@ -161,3 +174,44 @@ def get_analyse_ia(fixture_id: int) -> dict | None:
     d["cache"] = True
     d["cree_le"] = r["cree_le"]
     return d
+
+
+# ===================== Ratings Elo =====================
+
+def save_elo_ratings(scope: str, ratings: dict[int, dict]) -> None:
+    """Remplace toute la table Elo d'un scope ('national' ou 'club:39')."""
+    now = datetime.now(timezone.utc).isoformat()
+    with _conn() as c:
+        c.execute("DELETE FROM elo_ratings WHERE scope = ?", (scope,))
+        c.executemany(
+            """INSERT INTO elo_ratings (scope, team_id, nom, rating, n_matchs, maj_le)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            [(scope, tid, d.get("nom"), d["rating"], d.get("n_matchs", 0), now)
+             for tid, d in ratings.items()],
+        )
+
+
+def get_elo_ratings(scope: str) -> dict[int, dict]:
+    """Renvoie {team_id: {rating, nom, n_matchs, maj_le}} pour un scope."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT team_id, nom, rating, n_matchs, maj_le FROM elo_ratings WHERE scope = ?",
+            (scope,),
+        ).fetchall()
+    return {
+        r["team_id"]: {"rating": r["rating"], "nom": r["nom"],
+                       "n_matchs": r["n_matchs"], "maj_le": r["maj_le"]}
+        for r in rows
+    }
+
+
+def elo_age_heures(scope: str) -> float | None:
+    """Ancienneté (heures) du rating Elo le plus récent d'un scope, ou None."""
+    with _conn() as c:
+        r = c.execute(
+            "SELECT MAX(maj_le) AS m FROM elo_ratings WHERE scope = ?", (scope,)
+        ).fetchone()
+    if not r or not r["m"]:
+        return None
+    delta = datetime.now(timezone.utc) - datetime.fromisoformat(r["m"])
+    return delta.total_seconds() / 3600.0

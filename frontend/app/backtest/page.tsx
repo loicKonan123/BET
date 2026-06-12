@@ -161,6 +161,57 @@ export default function BacktestPage() {
             </span>
           </div>
 
+          {/* Qualité scientifique des probabilités */}
+          {result.brier_score != null && (
+            <div className="mb-xl">
+              <p className="text-xs text-on-surface-variant uppercase tracking-wider mb-sm font-medium">Qualité des probabilités (calibration)</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-md mb-md">
+                <div className="bg-surface-container-high rounded-xl p-md">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm text-on-surface-variant">Brier score</span>
+                    <span className="font-mono font-bold text-xl text-on-surface">{result.brier_score?.toFixed(3)}</span>
+                  </div>
+                  <p className="text-xs text-on-surface-variant/70 mt-xs">0 = parfait · plus bas = mieux calibré</p>
+                </div>
+                <div className="bg-surface-container-high rounded-xl p-md">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm text-on-surface-variant">Log-loss</span>
+                    <span className={`font-mono font-bold text-xl ${(result.log_loss ?? 1) < 0.99 ? "text-[#4edea3]" : "text-on-surface"}`}>
+                      {result.log_loss?.toFixed(3)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-on-surface-variant/70 mt-xs">référence marché ≈ 0.99 · sous = on bat le marché</p>
+                </div>
+              </div>
+
+              {/* Courbe de calibration */}
+              {result.calibration?.length > 0 && (
+                <div className="bg-surface-container-high rounded-xl p-md">
+                  <p className="text-xs text-on-surface-variant mb-sm">Calibration : probabilité prédite vs réussite réelle (idéal = égalité)</p>
+                  <div className="flex flex-col gap-xs">
+                    {result.calibration.map((c) => (
+                      <div key={c.bin} className="flex items-center gap-sm">
+                        <span className="text-xs text-on-surface-variant w-16 flex-shrink-0">{c.bin}</span>
+                        <div className="flex-1 relative h-5 bg-surface-container rounded overflow-hidden">
+                          <div className="absolute inset-y-0 left-0 bg-[#4edea3]/40" style={{ width: `${c.reussite_reelle}%` }} />
+                          {/* marqueur de la proba prédite */}
+                          <div className="absolute inset-y-0 w-0.5 bg-[#adc6ff]" style={{ left: `${c.proba_moyenne}%` }} title={`prédit ${c.proba_moyenne}%`} />
+                        </div>
+                        <span className="text-xs font-mono text-on-surface w-28 flex-shrink-0 text-right">
+                          {c.reussite_reelle}% <span className="text-on-surface-variant/60">({c.n})</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-md mt-sm text-xs text-on-surface-variant/70">
+                    <span className="flex items-center gap-xs"><span className="w-3 h-2 bg-[#4edea3]/40 rounded-sm inline-block" /> réussite réelle</span>
+                    <span className="flex items-center gap-xs"><span className="w-0.5 h-3 bg-[#adc6ff] inline-block" /> proba prédite</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Métriques */}
           <div className="flex flex-col gap-lg mb-xl">
 

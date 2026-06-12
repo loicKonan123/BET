@@ -14,8 +14,29 @@ C'est la force d'attaque d'un côté croisée avec la faiblesse défensive de
 l'autre. Transparent et économe en requêtes API.
 """
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from math import exp
 
 from .api_client import ApiFootball
+
+# Pondération temporelle (Dixon-Coles time-decay) : un match d'il y a N jours
+# pèse exp(-XI_DECAY * N). XI ≈ 0.003/jour => demi-vie ~230 jours (~8 mois).
+# Adapté aux sélections nationales qui jouent peu et évoluent lentement mais
+# dont la forme récente reste plus informative que les matchs anciens.
+XI_DECAY = 0.003
+
+
+def _poids_temporel(date_iso: str, ref: datetime | None = None) -> float:
+    """Poids exponentiel décroissant selon l'ancienneté du match (jours)."""
+    if not date_iso:
+        return 1.0
+    try:
+        d = datetime.fromisoformat(date_iso.replace("Z", "+00:00"))
+    except ValueError:
+        return 1.0
+    ref = ref or datetime.now(timezone.utc)
+    jours = max((ref - d).days, 0)
+    return exp(-XI_DECAY * jours)
 
 
 @dataclass
@@ -72,15 +93,15 @@ def recuperer_stats(api: ApiFootball, league: int, season: int, team: int) -> St
 def parser_stats_national(fixtures: list, team_id: int) -> StatsEquipe | None:
     """Calcule la force d'une sélection nationale à partir de ses matchs.
 
-    Pour une nation (Coupe du Monde), les stats « saison de ligue » n'existent
-    pas vraiment. On prend tous ses matchs internationaux terminés de la saison
-    et on en tire les moyennes buts marqués / encaissés.
-
-    En Coupe du Monde les terrains sont neutres -> on met la même valeur en
-    domicile et extérieur (moyenne globale), pour réutiliser `buts_attendus`.
+    Utilise les stats dom/ext séparées (même en WC, l'historique dom/ext
+    reflète mieux la force réelle : les hôtes performent mieux à domicile,
+    les équipes déplacées moins bien en déplacement).
     Les fixtures arrivent du plus ancien au plus récent -> la forme prend les 5 derniers.
     """
-    marques, encaisses, forme = [], [], []
+    # chaque entrée = (buts, poids_temporel)
+    home_scored, home_conceded = [], []
+    away_scored, away_conceded = [], []
+    all_scored, all_conceded, forme = [], [], []
     nom = "?"
 
     for f in fixtures:
@@ -93,30 +114,45 @@ def parser_stats_national(fixtures: list, team_id: int) -> StatsEquipe | None:
         if gh is None or ga is None:
             continue
 
+        poids = _poids_temporel(f.get("fixture", {}).get("date", ""))
+
         if home["id"] == team_id:
             nom, gf, gc = home["name"], gh, ga
+            home_scored.append((gf, poids))
+            home_conceded.append((gc, poids))
         elif away["id"] == team_id:
             nom, gf, gc = away["name"], ga, gh
+            away_scored.append((gf, poids))
+            away_conceded.append((gc, poids))
         else:
             continue
 
-        marques.append(gf)
-        encaisses.append(gc)
+        all_scored.append((gf, poids))
+        all_conceded.append((gc, poids))
         forme.append("W" if gf > gc else ("D" if gf == gc else "L"))
 
-    if not marques:
+    if not all_scored:
         return None
 
-    avg_marques = sum(marques) / len(marques)
-    avg_encaisses = sum(encaisses) / len(encaisses)
+    def _moy_ponderee(paires, fallback=None):
+        """Moyenne pondérée par le poids temporel. fallback si liste vide."""
+        if not paires:
+            return fallback
+        num = sum(v * w for v, w in paires)
+        den = sum(w for _, w in paires)
+        return num / den if den > 0 else fallback
+
+    avg_all = _moy_ponderee(all_scored)
+    avg_enc_all = _moy_ponderee(all_conceded)
+
     return StatsEquipe(
         nom=nom,
-        matchs_joues=len(marques),
-        buts_marques_dom=avg_marques,
-        buts_marques_ext=avg_marques,
-        buts_encaisses_dom=avg_encaisses,
-        buts_encaisses_ext=avg_encaisses,
-        forme="".join(forme[-5:]),  # 5 derniers, plus récent à droite
+        matchs_joues=len(all_scored),
+        buts_marques_dom=_moy_ponderee(home_scored, avg_all),
+        buts_marques_ext=_moy_ponderee(away_scored, avg_all),
+        buts_encaisses_dom=_moy_ponderee(home_conceded, avg_enc_all),
+        buts_encaisses_ext=_moy_ponderee(away_conceded, avg_enc_all),
+        forme="".join(forme[-5:]),
     )
 
 

@@ -4,6 +4,7 @@ import { dateHeureCanada } from "../lib/date";
 import Icon from "./Icon";
 
 const LIVE_STATUTS = new Set(["1H","HT","2H","ET","BT","P","SUSP","INT","LIVE"]);
+const FINI_STATUTS = new Set(["FT","AET","PEN","AWD","WO"]);
 
 function StatutBadge({ status, date }: { status?: string; date?: string }) {
   if (LIVE_STATUTS.has(status ?? "")) {
@@ -11,6 +12,14 @@ function StatutBadge({ status, date }: { status?: string; date?: string }) {
       <span className="flex items-center gap-xs px-sm py-xs rounded-full bg-error/20 text-error font-label-sm text-label-sm">
         <span className="w-1.5 h-1.5 rounded-full bg-error animate-ping inline-block" />
         En cours
+      </span>
+    );
+  }
+  if (FINI_STATUTS.has(status ?? "")) {
+    return (
+      <span className="flex items-center gap-xs px-sm py-xs rounded-full bg-white/10 text-on-surface-variant font-label-sm text-label-sm">
+        <Icon name="check" style={{ fontSize: 13 }} />
+        Terminé
       </span>
     );
   }
@@ -60,11 +69,16 @@ export default function AnalyseMatch({ a, href }: { a: Analyse; href?: string })
           <StatutBadge status={a.status} date={a.date} />
         </div>
         <div className="flex items-center justify-between gap-sm">
-          <span className="font-body-md text-body-md text-on-surface font-semibold">
+          <span className="font-body-md text-body-md text-on-surface font-semibold flex-1">
             {dom}
           </span>
-          <span className="font-label-sm text-label-sm text-on-surface-variant">vs</span>
-          <span className="font-body-md text-body-md text-on-surface font-semibold text-right">
+          {a.score
+            ? <span className={`font-mono font-bold text-headline-sm px-sm ${LIVE_STATUTS.has(a.status ?? "") ? "text-error" : "text-on-surface"}`}>
+                {a.score.domicile} - {a.score.exterieur}
+              </span>
+            : <span className="font-label-sm text-label-sm text-on-surface-variant">vs</span>
+          }
+          <span className="font-body-md text-body-md text-on-surface font-semibold text-right flex-1">
             {ext}
           </span>
         </div>

@@ -20,9 +20,14 @@ from pydantic import BaseModel
 from src import store
 from src.analyste import analyser_avec_ia
 from src.api_client import ApiFootball
+from src.blend import conseil_consensus, fusionner_1x2
+from src.elo import proba_1x2_elo
+from src.elo_service import assurer_ratings_club, assurer_ratings_nationaux, rating_de
 from src.ligues_mise_o_jeu import IDS_SOCCER, LIGUES_SOCCER
+from src.odds_parser import probas_marche_1x2
 from src.pipeline import (
     STATUTS_LIVE,
+    STATUTS_TERMINES,
     STATUTS_UPCOMING,
     analyser_fixture,
     analyser_fixture_sans_cotes,
@@ -101,7 +106,8 @@ def _settle_tickets() -> dict:
 
     for fid in fids_a_checker:
         try:
-            data = api.get("fixtures", {"id": fid})
+            # Toujours frais : on a besoin du score final réel, pas du cache
+            data = api.get("fixtures", {"id": fid}, use_cache=False)
             resp = data.get("response", [])
             if not resp:
                 cache_scores[fid] = None
@@ -174,20 +180,21 @@ def ligues():
     return [{"id": lid, "nom": nom} for lid, nom in LIGUES_SOCCER.items()]
 
 
-def _fenetre_dates(jours_avant: int = 7) -> list[str]:
-    """Dates à scanner : aujourd'hui + les `jours_avant` prochains jours."""
+def _fenetre_dates(jours_avant: int = 7, jours_passe: int = 0) -> list[str]:
+    """Dates à scanner : des `jours_passe` jours passés à `jours_avant` à venir."""
     today = date.today()
-    return [(today + timedelta(days=i)).isoformat() for i in range(0, jours_avant + 1)]
+    return [(today + timedelta(days=i)).isoformat()
+            for i in range(-jours_passe, jours_avant + 1)]
 
 
 def _scanner_fixtures(api, jours: int, valider: int, max_matchs: int,
-                       statuts_autorises=None):
+                       statuts_autorises=None, jours_passe: int = 0):
     """Récupère les matchs sur la fenêtre de dates. -> (fixtures, dates_ok)."""
     autorisees = IDS_SOCCER if valider else None
     if statuts_autorises is None:
         statuts_autorises = STATUTS_UPCOMING
     fixtures, dates_ok = [], []
-    for d in _fenetre_dates(jours):
+    for d in _fenetre_dates(jours, jours_passe):
         try:
             data = api.get("fixtures", {"date": d})
         except Exception:
@@ -233,13 +240,19 @@ def analyses(
     max_matchs: int = 40,
     valider: int = 1,
     jours: int = 7,
+    jours_passe: int = 2,
 ):
-    """Liste des matchs jouables analysés (probas + forme), pour la page Analyses."""
+    """Liste des matchs analysés (probas + forme), pour la page Analyses.
+
+    jours_passe : nombre de jours passés à inclure (matchs récemment terminés
+    restent visibles, marqués Terminé + score).
+    """
     try:
         api = ApiFootball()
         fixtures, dates_ok = _scanner_fixtures(
             api, jours, valider, max_matchs,
-            statuts_autorises=STATUTS_UPCOMING | STATUTS_LIVE,
+            statuts_autorises=STATUTS_UPCOMING | STATUTS_LIVE | STATUTS_TERMINES,
+            jours_passe=jours_passe,
         )
         out = []
         for fx in fixtures:
@@ -251,13 +264,11 @@ def analyses(
         return JSONResponse({"erreur": str(e)}, status_code=500)
 
 
-def _classement(api, league: int, season: int, home_id: int, away_id: int) -> dict | None:
-    """Classement COMPLET du championnat (toutes les équipes), pour vue d'ensemble.
-
-    On renvoie toute la table + les ids des 2 équipes du match (à surligner).
-    """
+def _classement(api, league: int, season: int, home_id: int, away_id: int,
+                frais: bool = False) -> dict | None:
+    """Classement COMPLET du championnat — bypass cache si le match est live/récent."""
     try:
-        data = api.get("standings", {"league": league, "season": season})
+        data = api.get("standings", {"league": league, "season": season}, use_cache=not frais)
     except Exception:
         return None
     resp = data.get("response", [])
@@ -335,10 +346,12 @@ def _h2h(api, home_id: int, away_id: int) -> list[dict]:
         return []
 
 
-def _compos(api, fixture_id: int) -> list[dict]:
-    """Compositions (disponibles ~1h avant le match)."""
+def _compos(api, fixture_id: int, status: str = "") -> list[dict]:
+    """Compositions — bypass cache si le match est live ou à venir (lineup peut changer)."""
     try:
-        data = api.get("fixtures/lineups", {"fixture": fixture_id})
+        # Pour les matchs actifs ou récents, on force un fetch frais
+        frais = status in STATUTS_LIVE or status in STATUTS_UPCOMING or status == ""
+        data = api.get("fixtures/lineups", {"fixture": fixture_id}, use_cache=not frais)
         out = []
         for t in data.get("response", []):
             out.append({
@@ -368,7 +381,9 @@ def _compos(api, fixture_id: int) -> list[dict]:
 
 def _detail_match(api, fixture_id: int, stats_season: int | None = None) -> dict:
     """Construit le détail complet d'un match (probas, value, conseil, équipes)."""
-    data = api.get("fixtures", {"id": fixture_id})
+    # Sans cache : le statut/score d'un match évolue (NS -> live -> FT). Un
+    # fixture mis en cache à l'état "à venir" donnerait un score périmé.
+    data = api.get("fixtures", {"id": fixture_id}, use_cache=False)
     resp = data.get("response", [])
     if not resp:
         raise HTTPException(status_code=404, detail="Match introuvable")
@@ -389,6 +404,8 @@ def _detail_match(api, fixture_id: int, stats_season: int | None = None) -> dict
         )
 
     res["date"] = f["fixture"]["date"]
+    res["league_id"] = f["league"]["id"]
+    res["round"] = f["league"].get("round", "")
     res["home"] = {
         "id": f["teams"]["home"]["id"],
         "name": f["teams"]["home"]["name"],
@@ -399,12 +416,78 @@ def _detail_match(api, fixture_id: int, stats_season: int | None = None) -> dict
         "name": f["teams"]["away"]["name"],
         "logo": f["teams"]["away"].get("logo"),
     }
-    res["classement"] = _classement(api, fx.league, fx.season, fx.home_id, fx.away_id)
+    match_status = f["fixture"]["status"]["short"]
+    est_frais = match_status in STATUTS_LIVE or match_status in {"FT", "AET", "PEN"}
+    res["classement"] = _classement(api, fx.league, fx.season, fx.home_id, fx.away_id, frais=est_frais)
     res["derniers_matchs_dom"] = _derniers_matchs(api, fx.home_id)
     res["derniers_matchs_ext"] = _derniers_matchs(api, fx.away_id)
     res["h2h"] = _h2h(api, fx.home_id, fx.away_id)
-    res["compos"] = _compos(api, fixture_id)
+    res["compos"] = _compos(api, fixture_id, status=f["fixture"]["status"]["short"])
+    res["multi_modeles"] = _multi_modeles(api, fx, res)
     return res
+
+
+# Nations hôtes du Mondial 2026 (terrain réel, pas neutre)
+HOTES_WC_2026 = {2, 16, 101}  # USA, Mexico, Canada
+LIGUES_NATIONALES = {1, 4, 5, 9, 10, 29, 30, 31, 32, 33, 34}
+
+
+def _multi_modeles(api, fx, res: dict) -> dict:
+    """Calcule Elo + marché + consensus pondéré pour le 1X2.
+
+    Combine trois estimations indépendantes (Poisson/DC, Elo, marché) en un
+    consensus statistique. Tolérant aux erreurs : toute source qui échoue est
+    simplement omise.
+    """
+    # 1 — Poisson (déjà calculé dans res)
+    probas = res.get("probabilites", {})
+    p_poisson = {k: probas.get(k) for k in ("1", "X", "2")} if probas.get("1") is not None else None
+
+    # 2 — Elo
+    p_elo = None
+    elo_info = None
+    try:
+        est_national = fx.league in LIGUES_NATIONALES
+        if est_national:
+            ratings = assurer_ratings_nationaux(api)
+        else:
+            ratings = assurer_ratings_club(api, fx.league, [fx.season - 1, fx.season])
+        r_home = rating_de(ratings, fx.home_id)
+        r_away = rating_de(ratings, fx.away_id)
+        # Terrain neutre en Coupe du Monde sauf nation hôte à domicile
+        neutre = fx.league == 1 and fx.home_id not in HOTES_WC_2026
+        p_elo = proba_1x2_elo(r_home, r_away, terrain_neutre=neutre)
+        elo_info = {"rating_dom": round(r_home), "rating_ext": round(r_away),
+                    "ecart": round(r_home - r_away), "terrain_neutre": neutre}
+    except Exception:
+        pass
+
+    # 3 — Marché (cotes 1X2, vig retiré)
+    p_marche = None
+    cotes_1x2 = {s.get("cle"): s.get("cote") for s in res.get("selections", [])
+                 if s.get("cle") in ("1", "X", "2") and s.get("cote")}
+    if len(cotes_1x2) == 3:
+        p_marche = probas_marche_1x2(cotes_1x2)
+
+    consensus = fusionner_1x2(p_poisson, p_elo, p_marche)
+
+    # Le conseil est désormais fondé sur le CONSENSUS (cohérent avec la carte),
+    # pas sur le Poisson seul. La value se mesure contre le marché.
+    probas_cons = consensus.get("probabilites")
+    if probas_cons:
+        cotes_all = {s.get("cle"): s.get("cote") for s in res.get("selections", [])
+                     if s.get("cote")}
+        conseil = conseil_consensus(probas_cons, cotes_all)
+        if conseil:
+            res["conseil"] = conseil
+
+    return {
+        "poisson": {k: round(v, 4) for k, v in p_poisson.items()} if p_poisson else None,
+        "elo": {k: round(v, 4) for k, v in p_elo.items()} if p_elo else None,
+        "elo_info": elo_info,
+        "marche": {k: round(v, 4) for k, v in p_marche.items()} if p_marche else None,
+        "consensus": consensus,
+    }
 
 
 @app.get("/api/match/{fixture_id}")

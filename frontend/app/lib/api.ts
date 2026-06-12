@@ -25,6 +25,7 @@ export type Analyse = {
   fixture_id: number;
   date?: string;
   status?: string;
+  score?: { domicile: number; exterieur: number } | null;
   buts_attendus: { domicile: number; exterieur: number };
   forme: { domicile: string; exterieur: string };
   probabilites: Record<string, number>;
@@ -68,6 +69,7 @@ export type Conseil = {
   proba: number;
   cote: number | null;
   value: number;
+  confiance?: string;
   raison: string;
 };
 
@@ -120,6 +122,21 @@ export type CompoEquipe = {
   remplacants: Joueur[];
 };
 
+export type Proba1X2 = { "1": number; "X": number; "2": number };
+
+export type MultiModeles = {
+  poisson: Proba1X2 | null;
+  elo: Proba1X2 | null;
+  elo_info: { rating_dom: number; rating_ext: number; ecart: number; terrain_neutre: boolean } | null;
+  marche: Proba1X2 | null;
+  consensus: {
+    probabilites: Proba1X2 | null;
+    poids_utilises: Record<string, number>;
+    sources_disponibles: string[];
+    accord: number | null;
+  };
+};
+
 export type MatchDetail = Analyse & {
   date: string;
   home: { id: number; name: string; logo?: string };
@@ -131,6 +148,7 @@ export type MatchDetail = Analyse & {
   derniers_matchs_ext: DernierMatch[];
   compos: CompoEquipe[];
   h2h: H2HMatch[];
+  multi_modeles?: MultiModeles;
   erreur?: string;
 };
 
@@ -142,12 +160,16 @@ export async function getMatch(fixtureId: number): Promise<MatchDetail> {
 
 // ---- Analyse IA (cerveau DeepSeek) ----
 export type AnalyseIA = {
+  probabilites_ia: { victoire_domicile: number; nul: number; victoire_exterieur: number } | null;
+  prediction: string | null;
+  confiance: string | null;
   analyse: string;
   points_cles: string[];
-  facteurs_risque: string[];
+  facteurs_correctifs_vs_poisson: string[];
+  facteurs_risque?: string[];
   recommandation: { marche: string; confiance: string; justification: string } | null;
-  accord_avec_modele: boolean | null;
-  nuance: string;
+  accord_avec_modele?: boolean | null;
+  nuance?: string;
   modele: string;
   cache?: boolean;
   cree_le?: string;
@@ -239,9 +261,15 @@ export type BacktestMatch = {
   lam_dom: number; lam_ext: number;
 };
 
+export type CalibrationBin = {
+  bin: string; proba_moyenne: number; reussite_reelle: number; n: number;
+};
+
 export type BacktestResult = {
   league_id: number; ligue: string; saison: number; total_matches: number;
   accuracy_1x2: number; ok_1x2: number;
+  brier_score: number | null; log_loss: number | null;
+  calibration: CalibrationBin[];
   accuracy_over25: number;  ok_over25: number;  n_over25: number;
   accuracy_under25: number; ok_under25: number; n_under25: number;
   accuracy_over15: number;  ok_over15: number;  n_over15: number;

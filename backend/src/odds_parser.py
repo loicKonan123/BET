@@ -65,3 +65,23 @@ def recuperer_cotes(api: ApiFootball, fixture_id: int) -> dict[str, float]:
     """Appelle l'API (1 requête) et renvoie les cotes moyennes par marché."""
     data = api.get("odds", {"fixture": fixture_id})
     return parser_cotes(data.get("response", []))
+
+
+def probas_marche_1x2(cotes: dict[str, float]) -> dict[str, float] | None:
+    """Convertit les cotes 1X2 en probabilités réelles, marge (vig) retirée.
+
+    Une cote implique une proba brute 1/cote. La somme des 1/cote dépasse 1 :
+    l'excédent est la marge du bookmaker (~5% en consensus, ~2.5% chez Pinnacle).
+    On normalise proportionnellement pour retrouver les probabilités « pures ».
+
+    Le closing line du marché est le meilleur prédicteur connu : ces probas
+    servent d'ancre de calibration. Renvoie None si les 3 cotes manquent.
+    """
+    try:
+        inv = {k: 1.0 / cotes[k] for k in ("1", "X", "2")}
+    except (KeyError, ZeroDivisionError):
+        return None
+    overround = sum(inv.values())
+    if overround <= 0:
+        return None
+    return {k: v / overround for k, v in inv.items()}

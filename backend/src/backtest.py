@@ -5,6 +5,8 @@ Coût API (première exécution) :
   - N appels : stats de chaque équipe unique (N ≈ 20 pour une ligue normale)
 Exécutions suivantes : 0 appel (tout en cache disque).
 """
+from math import log
+
 from .api_client import ApiFootball
 from .pipeline import (
     FixtureInfo,
@@ -12,6 +14,30 @@ from .pipeline import (
     analyser_fixture_sans_cotes,
     _nom_ligue,
 )
+
+
+def _brier_1x2(probas: dict, reel: str) -> float:
+    """Brier score multi-classe pour le 1X2 (0 = parfait, 2 = pire).
+
+    Σ (proba_k - issue_k)²  sur les 3 issues {1, X, 2}.
+    Mesure la CALIBRATION : récompense les probas honnêtes, pas juste le bon pari.
+    """
+    s = 0.0
+    for k in ("1", "X", "2"):
+        issue = 1.0 if k == reel else 0.0
+        s += (probas.get(k, 0.0) - issue) ** 2
+    return s
+
+
+def _logloss_1x2(probas: dict, reel: str) -> float:
+    """Log-loss (ignorance score) sur l'issue réelle 1X2.
+
+    -log(proba assignée à l'issue qui s'est produite). Plus c'est bas, mieux
+    c'est. Pénalise très fort la confiance mal placée. Recommandé par la
+    littérature (Constantinou & Fenton) au-dessus du RPS.
+    """
+    p = max(probas.get(reel, 0.0), 1e-12)  # garde-fou log(0)
+    return -log(p)
 
 
 def _resultat_reel(score_home: int, score_away: int) -> dict:
@@ -89,6 +115,12 @@ def run_backtest(
         "ok_dc_1x": 0, "n_dc_1x": 0,
     }
 
+    # Calibration : on cumule Brier + log-loss sur le 1X2
+    somme_brier = 0.0
+    somme_logloss = 0.0
+    # Bins de calibration : proba prédite (favori) vs taux de réussite réel
+    cal_bins = {i: {"n": 0, "ok": 0, "somme_proba": 0.0} for i in range(10)}
+
     for fx in fixtures:
         analyse = analyser_fixture_sans_cotes(api, fx, stats_season=season)
         if not analyse:
@@ -98,6 +130,16 @@ def run_backtest(
         reel = _resultat_reel(score_home, score_away)
         probas = analyse["probabilites"]
         total_buts = score_home + score_away
+
+        # Calibration 1X2
+        somme_brier += _brier_1x2(probas, reel["1x2"])
+        somme_logloss += _logloss_1x2(probas, reel["1x2"])
+        p_favori = max(probas.get("1", 0), probas.get("X", 0), probas.get("2", 0))
+        bin_idx = min(int(p_favori * 10), 9)
+        cal_bins[bin_idx]["n"] += 1
+        cal_bins[bin_idx]["somme_proba"] += p_favori
+        if max(["1", "X", "2"], key=lambda k: probas.get(k, 0)) == reel["1x2"]:
+            cal_bins[bin_idx]["ok"] += 1
 
         pred_1x2    = max(["1", "X", "2"], key=lambda k: probas.get(k, 0))
         pred_over25 = "over_2.5"  if probas.get("over_2.5", 0) >= 0.5 else "under_2.5"
@@ -161,6 +203,19 @@ def run_backtest(
         return round(n / d * 100, 1) if d > 0 else 0.0
 
     total = c["total_1x2"]
+
+    # Courbe de calibration : pour chaque bin de proba, taux de réussite réel
+    calibration = []
+    for i in range(10):
+        b = cal_bins[i]
+        if b["n"] > 0:
+            calibration.append({
+                "bin": f"{i*10}-{i*10+10}%",
+                "proba_moyenne": round(b["somme_proba"] / b["n"] * 100, 1),
+                "reussite_reelle": round(b["ok"] / b["n"] * 100, 1),
+                "n": b["n"],
+            })
+
     return {
         "league_id": league_id,
         "ligue": _nom_ligue(league_id),
@@ -169,6 +224,10 @@ def run_backtest(
         # 1X2 global
         "accuracy_1x2": pct(c["ok_1x2"], total),
         "ok_1x2": c["ok_1x2"],
+        # Calibration (qualité scientifique des probabilités)
+        "brier_score": round(somme_brier / total, 4) if total else None,
+        "log_loss": round(somme_logloss / total, 4) if total else None,
+        "calibration": calibration,
         # Over/Under 2.5 par direction
         "accuracy_over25":  pct(c["ok_over25"],  c["n_over25"]),
         "accuracy_under25": pct(c["ok_under25"], c["n_under25"]),

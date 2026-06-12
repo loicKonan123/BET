@@ -7,7 +7,7 @@ import Icon from "../../components/Icon";
 import PitchView from "../../components/PitchView";
 import {
   AnalyseIA, DernierMatch, H2HMatch,
-  LigneClassement, MatchDetail, getAnalyseIA, getMatch,
+  LigneClassement, MatchDetail, MultiModeles, getAnalyseIA, getMatch,
 } from "../../lib/api";
 import { useLiveScore } from "../../hooks/useLiveScore";
 import { dateHeureCanada } from "../../lib/date";
@@ -56,6 +56,94 @@ function MiniStat({ label, value, color }: { label: string; value: string; color
     <div className="bg-white/5 rounded-lg p-sm flex flex-col items-center">
       <span className="font-label-sm text-label-sm text-on-surface-variant">{label}</span>
       <span className={`font-mono font-bold text-headline-sm ${cls}`}>{value}</span>
+    </div>
+  );
+}
+
+// Libellés et couleurs des sources de modèle
+const SOURCE_META: Record<string, { label: string; icon: string }> = {
+  poisson:   { label: "Poisson / Dixon-Coles", icon: "functions" },
+  elo:       { label: "Elo (force globale)",   icon: "military_tech" },
+  marche:    { label: "Marché (sans marge)",   icon: "storefront" },
+};
+
+function BarreProba({ p }: { p: { "1": number; "X": number; "2": number } }) {
+  return (
+    <>
+      <div className="flex h-2 rounded-full overflow-hidden bg-surface-container-highest">
+        <div className="bg-primary" style={{ width: `${Math.round(p["1"] * 100)}%` }} />
+        <div className="bg-outline" style={{ width: `${Math.round(p["X"] * 100)}%` }} />
+        <div className="bg-secondary" style={{ width: `${Math.round(p["2"] * 100)}%` }} />
+      </div>
+      <div className="flex justify-between mt-xs font-label-sm text-label-sm">
+        <span className="text-primary">{Math.round(p["1"] * 100)}%</span>
+        <span className="text-on-surface-variant">{Math.round(p["X"] * 100)}%</span>
+        <span className="text-secondary">{Math.round(p["2"] * 100)}%</span>
+      </div>
+    </>
+  );
+}
+
+function ConsensusCard({ mm }: { mm: MultiModeles }) {
+  const cons = mm.consensus.probabilites!;
+  const accord = mm.consensus.accord ?? 0;
+  // accord faible = convergence ; > 0.15 = désaccord notable
+  const convergence = accord <= 0.08 ? { txt: "Forte convergence", cls: "text-primary", icon: "check_circle" }
+    : accord <= 0.15 ? { txt: "Convergence modérée", cls: "text-tertiary", icon: "remove" }
+    : { txt: "Désaccord entre modèles", cls: "text-error", icon: "warning" };
+  const sources: Array<["poisson" | "elo" | "marche", typeof mm.poisson]> = [
+    ["poisson", mm.poisson], ["elo", mm.elo], ["marche", mm.marche],
+  ];
+  return (
+    <div className="glass-card rounded-xl p-lg flex flex-col gap-lg">
+      <div className="flex items-center justify-between gap-md flex-wrap">
+        <div className="flex items-center gap-sm">
+          <div className="w-10 h-10 rounded-lg bg-primary-container/30 flex items-center justify-center">
+            <Icon name="hub" className="text-primary" />
+          </div>
+          <div>
+            <div className="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant">Consensus statistique</div>
+            <div className="font-headline-sm text-headline-sm text-on-surface">3 modèles indépendants</div>
+          </div>
+        </div>
+        <span className={`flex items-center gap-xs font-label-sm text-label-sm ${convergence.cls}`}>
+          <Icon name={convergence.icon} style={{ fontSize: 16 }} />{convergence.txt}
+        </span>
+      </div>
+
+      {/* Consensus pondéré — vedette */}
+      <div className="bg-primary-container/10 border border-primary/20 rounded-xl p-md">
+        <div className="font-label-sm text-label-sm uppercase tracking-widest text-primary mb-sm">Probabilité consensus</div>
+        <BarreProba p={cons} />
+      </div>
+
+      {/* Détail par source */}
+      <div className="flex flex-col gap-md">
+        {sources.map(([key, p]) => p && (
+          <div key={key}>
+            <div className="flex items-center justify-between mb-xs">
+              <span className="flex items-center gap-xs font-label-md text-label-md text-on-surface-variant">
+                <Icon name={SOURCE_META[key].icon} style={{ fontSize: 15 }} />
+                {SOURCE_META[key].label}
+              </span>
+              {mm.consensus.poids_utilises[key] != null && (
+                <span className="font-label-sm text-label-sm text-on-surface-variant/60">
+                  poids {Math.round(mm.consensus.poids_utilises[key] * 100)}%
+                </span>
+              )}
+            </div>
+            <BarreProba p={p} />
+          </div>
+        ))}
+      </div>
+
+      {mm.elo_info && (
+        <div className="flex items-center gap-sm font-label-sm text-label-sm text-on-surface-variant/70 pt-sm border-t border-white/10">
+          <Icon name="military_tech" style={{ fontSize: 14 }} />
+          Elo : {mm.elo_info.rating_dom} vs {mm.elo_info.rating_ext} (écart {mm.elo_info.ecart > 0 ? "+" : ""}{mm.elo_info.ecart})
+          {mm.elo_info.terrain_neutre && " · terrain neutre"}
+        </div>
+      )}
     </div>
   );
 }
@@ -157,6 +245,7 @@ export default function MatchPage() {
   const { picks, add, remove } = useTicketBuilder();
 
   const { liveScore, isLive } = useLiveScore(id, m?.status);
+  const fini = ["FT", "AET", "PEN", "AWD", "WO"].includes(m?.status ?? "");
 
   useEffect(() => {
     if (!id) return;
@@ -234,6 +323,12 @@ export default function MatchPage() {
                   </span>
                 </span>
               )}
+              {fini && (
+                <span className="flex items-center gap-xs px-sm py-[3px] rounded-full bg-white/10 border border-white/15">
+                  <Icon name="check" style={{ fontSize: 14 }} className="text-on-surface-variant" />
+                  <span className="text-[11px] font-bold text-on-surface-variant tracking-wider">TERMINÉ</span>
+                </span>
+              )}
             </div>
 
             <div className="flex items-center justify-between gap-md">
@@ -247,6 +342,15 @@ export default function MatchPage() {
                       {liveScore.score.away}
                     </span>
                     <span className="text-[10px] text-on-surface-variant">score en direct</span>
+                  </>
+                ) : fini && m.score ? (
+                  <>
+                    <span className="font-mono text-[2.5rem] leading-none font-black text-on-surface">
+                      {m.score.domicile}
+                      <span className="text-on-surface-variant opacity-40 mx-xs">-</span>
+                      {m.score.exterieur}
+                    </span>
+                    <span className="text-[10px] text-on-surface-variant">score final</span>
                   </>
                 ) : (
                   <>
@@ -314,15 +418,20 @@ export default function MatchPage() {
                     <div className="w-10 h-10 rounded-lg bg-primary/15 flex items-center justify-center">
                       <Icon name="lightbulb" className="text-primary" />
                     </div>
-                    <div>
-                      <div className="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant">Conseil</div>
+                    <div className="flex-1">
+                      <div className="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant">Bilan du consensus</div>
                       <div className="font-headline-sm text-headline-sm text-on-surface">{m.conseil.marche}</div>
                     </div>
+                    {m.conseil.confiance && (
+                      <span className={`font-label-sm text-label-sm px-sm py-0.5 rounded-full ${m.conseil.confiance === "élevée" ? "bg-primary/20 text-primary" : m.conseil.confiance === "moyenne" ? "bg-tertiary/20 text-tertiary" : "bg-white/10 text-on-surface-variant"}`}>
+                        Confiance {m.conseil.confiance}
+                      </span>
+                    )}
                   </div>
                   <div className="grid grid-cols-3 gap-sm mb-md">
                     <MiniStat label="Probabilité" value={pct(m.conseil.proba)} color="secondary" />
                     <MiniStat label="Cote" value={m.conseil.cote ? m.conseil.cote.toFixed(2) : "—"} color="primary" />
-                    <MiniStat label="Value" value={`${m.conseil.value >= 0 ? "+" : ""}${Math.round(m.conseil.value * 100)}%`} color={m.conseil.value >= 0 ? "primary" : "error"} />
+                    <MiniStat label="Value" value={m.conseil.cote ? `${m.conseil.value >= 0 ? "+" : ""}${Math.round(m.conseil.value * 100)}%` : "—"} color={m.conseil.value >= 0 ? "primary" : "error"} />
                   </div>
                   <p className="font-body-md text-body-md text-on-surface-variant">{m.conseil.raison}</p>
                 </div>
@@ -410,6 +519,11 @@ export default function MatchPage() {
                 </div>
               </div>
 
+              {/* Consensus multi-modèles */}
+              {m.multi_modeles?.consensus?.probabilites && (
+                <ConsensusCard mm={m.multi_modeles} />
+              )}
+
               {/* Analyse IA */}
               <div className="glass-card rounded-xl p-lg">
                 <div className="flex items-center justify-between gap-md mb-md flex-wrap">
@@ -418,16 +532,16 @@ export default function MatchPage() {
                       <Icon name="neurology" className="text-secondary" />
                     </div>
                     <div>
-                      <div className="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant">Cerveau analyste</div>
-                      <div className="font-headline-sm text-headline-sm text-on-surface">Analyse IA</div>
+                      <div className="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant">Prédiction IA</div>
+                      <div className="font-headline-sm text-headline-sm text-on-surface">Analyse EDGE</div>
                     </div>
                   </div>
                   {!ia ? (
                     <button onClick={() => demanderIA()} disabled={iaLoading}
                       className="flex items-center gap-sm bg-secondary-container text-on-secondary-container font-label-md text-label-md px-lg py-sm rounded-lg hover:opacity-90 transition-all active:scale-95 disabled:opacity-50">
                       {iaLoading
-                        ? <><span className="w-4 h-4 border-2 border-on-secondary-container border-t-transparent rounded-full animate-spin" />L'expert analyse…</>
-                        : <><Icon name="auto_awesome" style={{ fontSize: 18 }} />Demander l'analyse</>}
+                        ? <><span className="w-4 h-4 border-2 border-on-secondary-container border-t-transparent rounded-full animate-spin" />Analyse en cours…</>
+                        : <><Icon name="auto_awesome" style={{ fontSize: 18 }} />Lancer l'analyse</>}
                     </button>
                   ) : (
                     <button onClick={() => demanderIA(true)} disabled={iaLoading}
@@ -440,13 +554,54 @@ export default function MatchPage() {
                 {iaErreur && <p className="text-error font-body-md">Erreur : {iaErreur}</p>}
                 {!ia && !iaLoading && !iaErreur && (
                   <p className="font-body-md text-body-md text-on-surface-variant">
-                    Lance une analyse approfondie : l'IA croise les probabilités, la forme, les blessures et l'historique (~20s).
+                    L'IA analyse tout : Poisson, forme dom/ext, H2H, blessures, contexte tournoi — et produit sa propre prédiction (~20s).
                   </p>
                 )}
-                {iaLoading && <p className="font-body-md text-body-md text-on-surface-variant animate-pulse">L'expert IA étudie le dossier…</p>}
+                {iaLoading && (
+                  <div className="flex flex-col gap-sm">
+                    <p className="font-body-md text-body-md text-on-surface-variant animate-pulse">Le raisonneur étudie le dossier complet…</p>
+                    <div className="h-1 bg-white/5 rounded overflow-hidden"><div className="h-full bg-secondary animate-pulse w-2/3" /></div>
+                  </div>
+                )}
                 {ia && (
-                  <div className="flex flex-col gap-md">
+                  <div className="flex flex-col gap-lg">
+
+                    {/* Probas IA — résultat principal */}
+                    {ia.probabilites_ia && (
+                      <div className="bg-secondary-container/10 border border-secondary/20 rounded-xl p-md">
+                        <div className="flex items-center gap-sm mb-md">
+                          <Icon name="insights" className="text-secondary" style={{ fontSize: 18 }} />
+                          <span className="font-label-sm text-label-sm uppercase tracking-widest text-secondary">Probabilités IA</span>
+                          {ia.confiance && (
+                            <span className={`ml-auto font-label-sm text-label-sm px-sm py-0.5 rounded-full ${ia.confiance === "élevée" ? "bg-primary/20 text-primary" : ia.confiance === "moyenne" ? "bg-tertiary/20 text-tertiary" : "bg-white/10 text-on-surface-variant"}`}>
+                              Confiance {ia.confiance}
+                            </span>
+                          )}
+                        </div>
+                        {/* Barre de probabilités */}
+                        <div className="flex rounded overflow-hidden h-3 mb-sm">
+                          <div className="bg-primary transition-all" style={{ width: `${Math.round((ia.probabilites_ia.victoire_domicile ?? 0) * 100)}%` }} />
+                          <div className="bg-outline transition-all" style={{ width: `${Math.round((ia.probabilites_ia.nul ?? 0) * 100)}%` }} />
+                          <div className="bg-secondary transition-all" style={{ width: `${Math.round((ia.probabilites_ia.victoire_exterieur ?? 0) * 100)}%` }} />
+                        </div>
+                        <div className="flex justify-between font-label-md text-label-md">
+                          <span className="text-primary">Dom. {Math.round((ia.probabilites_ia.victoire_domicile ?? 0) * 100)}%</span>
+                          <span className="text-on-surface-variant">Nul {Math.round((ia.probabilites_ia.nul ?? 0) * 100)}%</span>
+                          <span className="text-secondary">Ext. {Math.round((ia.probabilites_ia.victoire_exterieur ?? 0) * 100)}%</span>
+                        </div>
+                        {ia.prediction && (
+                          <div className="mt-md pt-md border-t border-white/10 flex items-center gap-sm">
+                            <Icon name="emoji_events" className="text-tertiary" style={{ fontSize: 18 }} />
+                            <span className="font-body-lg text-body-lg text-on-surface font-semibold">Prédiction : {ia.prediction}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Analyse narrative */}
                     <p className="font-body-lg text-body-lg text-on-surface">{ia.analyse}</p>
+
+                    {/* Points clés */}
                     {ia.points_cles?.length > 0 && (
                       <div>
                         <div className="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant mb-xs">Points clés</div>
@@ -459,33 +614,46 @@ export default function MatchPage() {
                         </ul>
                       </div>
                     )}
-                    {ia.facteurs_risque?.length > 0 && (
+
+                    {/* Facteurs correctifs vs Poisson */}
+                    {((ia.facteurs_correctifs_vs_poisson?.length ?? 0) > 0 || ((ia.facteurs_risque ?? []).length > 0)) && (
                       <div>
-                        <div className="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant mb-xs">Facteurs de risque</div>
+                        <div className="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant mb-xs">Corrections vs modèle statistique</div>
                         <ul className="flex flex-col gap-xs">
-                          {ia.facteurs_risque.map((p, i) => (
+                          {(ia.facteurs_correctifs_vs_poisson?.length ? ia.facteurs_correctifs_vs_poisson : (ia.facteurs_risque ?? [])).map((p, i) => (
                             <li key={i} className="flex items-start gap-sm font-body-md text-body-md text-on-surface">
-                              <Icon name="warning" className="text-tertiary mt-0.5" style={{ fontSize: 16 }} />{p}
+                              <Icon name="tune" className="text-tertiary mt-0.5" style={{ fontSize: 16 }} />{p}
                             </li>
                           ))}
                         </ul>
                       </div>
                     )}
+
+                    {/* Recommandation */}
                     {ia.recommandation && (
                       <div className="bg-secondary-container/20 border border-secondary/20 rounded-lg p-md">
-                        <div className="flex items-center justify-between mb-xs">
+                        <div className="flex items-center justify-between mb-xs flex-wrap gap-xs">
                           <span className="font-headline-sm text-headline-sm text-secondary">{ia.recommandation.marche}</span>
-                          <span className="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant">confiance {ia.recommandation.confiance}</span>
+                          <span className={`font-label-sm text-label-sm uppercase tracking-widest px-sm py-0.5 rounded-full ${ia.recommandation.confiance === "élevée" ? "bg-primary/20 text-primary" : "bg-white/10 text-on-surface-variant"}`}>
+                            Confiance {ia.recommandation.confiance}
+                          </span>
                         </div>
                         <p className="font-body-md text-body-md text-on-surface-variant">{ia.recommandation.justification}</p>
                       </div>
                     )}
-                    {ia.nuance && (
-                      <div className="flex items-start gap-sm font-body-md text-body-md text-on-surface-variant">
-                        <Icon name={ia.accord_avec_modele ? "thumb_up" : "balance"} className={ia.accord_avec_modele ? "text-primary" : "text-tertiary"} style={{ fontSize: 16 }} />
-                        <span>{ia.accord_avec_modele === false && <strong className="text-tertiary">Nuance vs modèle : </strong>}{ia.nuance}</span>
+
+                    {/* Référence Poisson (secondaire) */}
+                    {m?.probabilites && (
+                      <div className="border-t border-white/10 pt-md">
+                        <div className="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant/60 mb-xs">Référence statistique (Poisson)</div>
+                        <div className="flex gap-md font-body-sm text-body-sm text-on-surface-variant/60">
+                          <span>Dom. {pct(m.probabilites["1"] ?? 0)}</span>
+                          <span>Nul {pct(m.probabilites["X"] ?? 0)}</span>
+                          <span>Ext. {pct(m.probabilites["2"] ?? 0)}</span>
+                        </div>
                       </div>
                     )}
+
                     {ia.cache && <span className="font-label-sm text-label-sm text-on-surface-variant/60 self-end">Depuis le cache</span>}
                   </div>
                 )}

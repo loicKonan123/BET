@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Icon from "../components/Icon";
-import { runBacktest, BacktestResult } from "../lib/api";
+import { runBacktest, BacktestResult, ConsensusEval, ModeleEval } from "../lib/api";
 import { LIGUES } from "../lib/ligues";
 
 const SAISONS = [2025, 2024, 2023, 2022, 2021, 2020];
@@ -55,6 +55,73 @@ function AccuracyCard({
   );
 }
 
+// Tableau comparatif des modèles évalués en walk-forward (hors-échantillon).
+function ConsensusCompare({ ev }: { ev: ConsensusEval }) {
+  const lignes: { cle: keyof ConsensusEval; label: string; tag?: string }[] = [
+    { cle: "moyennes_brutes", label: "Moyennes brutes", tag: "ancien" },
+    { cle: "poisson_ajuste", label: "Poisson ajusté (MLE)" },
+    { cle: "elo", label: "Elo (force globale)" },
+    { cle: "consensus", label: "Consensus", tag: "servi" },
+  ];
+  const modeles = lignes
+    .map((l) => ({ ...l, m: ev[l.cle] as ModeleEval | null }))
+    .filter((l) => l.m);
+  if (modeles.length === 0) return null;
+
+  // Meilleur (plus bas) log-loss = champion de calibration
+  const meilleurLL = Math.min(...modeles.map((l) => l.m!.log_loss));
+
+  return (
+    <div className="mb-xl">
+      <p className="text-xs text-on-surface-variant uppercase tracking-wider mb-sm font-medium">
+        Comparatif des modèles — hors-échantillon
+      </p>
+      <p className="text-xs text-on-surface-variant/70 mb-md">
+        Entraîné sur {ev.n_train} matchs, testé sur {ev.n_test} matchs jamais vus (walk-forward, aucune fuite).
+        Le log-loss mesure la calibration : plus bas = mieux.
+      </p>
+      <div className="bg-surface-container-high rounded-xl overflow-hidden">
+        <div className="grid grid-cols-[1.6fr_1fr_1fr_1fr] gap-sm px-md py-sm text-xs text-on-surface-variant/70 border-b border-white/10">
+          <span>Modèle</span>
+          <span className="text-right">Log-loss</span>
+          <span className="text-right">Brier</span>
+          <span className="text-right">Précision</span>
+        </div>
+        {modeles.map(({ cle, label, tag, m }) => {
+          const champion = m!.log_loss === meilleurLL;
+          return (
+            <div
+              key={cle}
+              className={`grid grid-cols-[1.6fr_1fr_1fr_1fr] gap-sm px-md py-sm text-sm border-b border-white/5 last:border-0 ${
+                champion ? "bg-[#4edea3]/10" : ""
+              }`}
+            >
+              <span className="flex items-center gap-xs text-on-surface">
+                {label}
+                {tag === "servi" && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-semibold">affiché</span>
+                )}
+                {tag === "ancien" && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-on-surface-variant/70">réf.</span>
+                )}
+              </span>
+              <span className={`text-right font-mono font-bold ${champion ? "text-[#4edea3]" : "text-on-surface"}`}>
+                {m!.log_loss.toFixed(3)}
+              </span>
+              <span className="text-right font-mono text-on-surface-variant">{m!.brier_score.toFixed(3)}</span>
+              <span className="text-right font-mono text-on-surface-variant">{m!.accuracy_1x2}%</span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-xs text-on-surface-variant/60 mt-sm">
+        Surligné = meilleure calibration. Le marché n&apos;est pas inclus ici (cotes historiques indisponibles) :
+        ce tableau mesure la qualité propre de notre moteur.
+      </p>
+    </div>
+  );
+}
+
 export default function BacktestPage() {
   const [league, setLeague] = useState(39);
   const [season, setSeason] = useState(2024);
@@ -84,7 +151,8 @@ export default function BacktestPage() {
           <Icon name="science" /> Backtest
         </h1>
         <p className="text-sm text-on-surface-variant">
-          Rejoue le modèle Poisson sur les matchs terminés d&apos;une saison et mesure sa précision réelle.
+          Rejoue nos modèles sur les matchs terminés d&apos;une saison et mesure leur précision réelle —
+          avec un comparatif hors-échantillon du consensus.
         </p>
       </div>
 
@@ -210,6 +278,11 @@ export default function BacktestPage() {
                 </div>
               )}
             </div>
+          )}
+
+          {/* Comparatif des modèles (consensus walk-forward, hors-échantillon) */}
+          {result.consensus_eval && (
+            <ConsensusCompare ev={result.consensus_eval} />
           )}
 
           {/* Métriques */}

@@ -265,11 +265,25 @@ export type CalibrationBin = {
   bin: string; proba_moyenne: number; reussite_reelle: number; n: number;
 };
 
+export type ModeleEval = {
+  n: number; accuracy_1x2: number; log_loss: number; brier_score: number;
+  calibration: CalibrationBin[];
+};
+
+export type ConsensusEval = {
+  n_train: number; n_test: number;
+  moyennes_brutes: ModeleEval | null;
+  poisson_ajuste: ModeleEval | null;
+  elo: ModeleEval | null;
+  consensus: ModeleEval | null;
+};
+
 export type BacktestResult = {
   league_id: number; ligue: string; saison: number; total_matches: number;
   accuracy_1x2: number; ok_1x2: number;
   brier_score: number | null; log_loss: number | null;
   calibration: CalibrationBin[];
+  consensus_eval: ConsensusEval | null;
   accuracy_over25: number;  ok_over25: number;  n_over25: number;
   accuracy_under25: number; ok_under25: number; n_under25: number;
   accuracy_over15: number;  ok_over15: number;  n_over15: number;

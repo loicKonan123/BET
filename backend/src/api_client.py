@@ -4,12 +4,15 @@ Plan gratuit : 100 requêtes / jour. On compte donc chaque appel et on
 met en cache sur disque pour ne pas gaspiller le quota pendant les tests.
 """
 import json
+import logging
 import os
 import time
 from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
+
+log = logging.getLogger("edge.api")
 
 # Charge backend/.env quel que soit le répertoire de lancement
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -38,8 +41,10 @@ class ApiFootball:
         params = params or {}
         cache_file = self._cache_path(endpoint, params)
         if use_cache and cache_file.exists():
+            log.info("GET %s %s [CACHE]", endpoint, params)
             return json.loads(cache_file.read_text(encoding="utf-8"))
 
+        log.info("GET %s %s [RÉSEAU]", endpoint, params)
         url = f"{BASE_URL}/{endpoint.lstrip('/')}"
 
         # Gère la limite par minute du plan gratuit (429) : attend et réessaie
@@ -48,8 +53,8 @@ class ApiFootball:
             resp = self.session.get(url, params=params, timeout=20)
             if resp.status_code == 429:
                 attente = int(resp.headers.get("Retry-After", 0)) or 65
-                print(f"  [rate-limit] limite/minute atteinte, attente {attente}s "
-                      f"(essai {essai + 1}/{max_essais})...")
+                log.warning("rate-limit atteint sur %s, attente %ss (essai %s/%s)",
+                            endpoint, attente, essai + 1, max_essais)
                 time.sleep(attente)
                 continue
             resp.raise_for_status()
@@ -61,7 +66,11 @@ class ApiFootball:
 
         # API-Football renvoie les erreurs dans le corps, pas en code HTTP
         if data.get("errors"):
+            log.error("API-Football erreur sur %s %s : %s", endpoint, params, data["errors"])
             raise RuntimeError(f"Erreur API : {data['errors']}")
+
+        n = len(data.get("response", [])) if isinstance(data.get("response"), list) else "?"
+        log.info("GET %s -> %s résultat(s)", endpoint, n)
 
         cache_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         time.sleep(0.3)  # plan PRO ~300 req/min -> ~200/min, marge confortable

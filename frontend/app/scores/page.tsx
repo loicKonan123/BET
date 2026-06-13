@@ -151,9 +151,9 @@ export default function ScoresPage() {
   // Grouper par ligue
   const groupes = data
     ? Object.values(
-        data.matchs.reduce<Record<number, { ligue: string; logo?: string; matchs: ScoreMatch[] }>>(
+        data.matchs.reduce<Record<number, { ligue_id: number; ligue: string; logo?: string; matchs: ScoreMatch[] }>>(
           (acc, m) => {
-            if (!acc[m.ligue_id]) acc[m.ligue_id] = { ligue: m.ligue, logo: m.ligue_logo, matchs: [] };
+            if (!acc[m.ligue_id]) acc[m.ligue_id] = { ligue_id: m.ligue_id, ligue: m.ligue, logo: m.ligue_logo, matchs: [] };
             acc[m.ligue_id].matchs.push(m);
             return acc;
           },
@@ -226,7 +226,7 @@ export default function ScoresPage() {
       )}
 
       {!loading && groupes.map((g) => (
-        <LeagueGroup key={g.ligue} ligue={g.ligue} logo={g.logo} matchs={g.matchs} />
+        <LeagueGroup key={g.ligue_id} ligue={g.ligue} logo={g.logo} matchs={g.matchs} />
       ))}
     </>
   );

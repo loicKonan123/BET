@@ -80,6 +80,19 @@ On ne mise pas dans l'app : on analyse, on conseille, on suit la précision des 
 - ✅ **Bouton Retour contextuel** — `router.back()` fonctionne depuis `/scores` ou `/analyses`
 - ✅ **Auto-switch onglet Compos** — si les compositions sont disponibles, l'onglet Compos est sélectionné automatiquement
 
+### Matchs terminés
+- ✅ **Badge "Terminé"** sur la page match (FT/AET/PEN/AWD/WO) + score final en grand
+- ✅ **Score affiché sur les cartes d'analyse** (`/analyses`) — `domicile - extérieur` entre les noms d'équipes
+- ✅ **Page `/analyses` remonte aussi les matchs passés** (2 jours en arrière, paramètre `jours_passe`)
+- ✅ **Clé React unique sur `/scores`** — groupement par `ligue_id` (numérique) au lieu du nom de ligue (corrige le doublon "Primera División")
+
+### Observabilité / Debugging
+- ✅ **Logging structuré** dans `api_client.py` — chaque appel API loggé (CACHE/RÉSEAU), nombre de résultats, erreurs API détaillées, rate-limit avec durée d'attente
+- ✅ **Logging structuré** dans `app.py` — chaque endpoint loggé (entrée + résultat), toutes les exceptions avec stack trace, settlement auto loggé
+- ✅ **Fix H2H** — `_h2h()` utilisait `fixtures` + param `h2h` au lieu de `fixtures/headtohead` → confrontations directes étaient toujours vides (découvert via logs)
+- ✅ **Auto-réparation compos** — si le cache renvoie 0 équipes (compos mises en cache avant publication), retry automatique sans cache
+- ✅ **Fix cache match detail** — `use_cache=False` sur le fetch de fixture dans `_detail_match` (évite le statut "NS" périmé pour les matchs terminés)
+
 ---
 
 ## 🔄 Prioritaires

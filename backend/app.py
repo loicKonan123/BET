@@ -8,6 +8,7 @@ L'endpoint /api/generer fait tourner le pipeline et renvoie le JSON
 (combinés + analyses). Grâce au cache disque, recliquer ne reconsomme
 pas le quota API.
 """
+import logging
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 
@@ -16,6 +17,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+
+# ===================== Logging =====================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+    datefmt="%H:%M:%S",
+)
+log = logging.getLogger("edge")
 
 from src import store
 from src.analyste import analyser_avec_ia
@@ -149,10 +158,11 @@ def _settle_tickets() -> dict:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     store.init_db()
+    log.info("EDGE API démarrée — base initialisée")
     try:
         _settle_tickets()
-    except Exception:
-        pass
+    except Exception as e:
+        log.exception("settlement au démarrage: ÉCHEC : %s", e)
     yield
 
 
@@ -254,13 +264,20 @@ def analyses(
             statuts_autorises=STATUTS_UPCOMING | STATUTS_LIVE | STATUTS_TERMINES,
             jours_passe=jours_passe,
         )
+        log.info("analyses: %s matchs trouvés sur %s dates (passé=%s, avant=%s)",
+                 len(fixtures), len(dates_ok), jours_passe, jours)
         out = []
+        ignores = 0
         for fx in fixtures:
             r = analyser_fixture_sans_cotes(api, fx, stats_season=stats_season)
             if r:
                 out.append(r)
+            else:
+                ignores += 1
+        log.info("analyses: %s analysés, %s ignorés (données insuffisantes)", len(out), ignores)
         return JSONResponse({"dates_scannees": dates_ok, "nb": len(out), "analyses": out})
     except Exception as e:
+        log.exception("analyses: ÉCHEC : %s", e)
         return JSONResponse({"erreur": str(e)}, status_code=500)
 
 
@@ -269,7 +286,8 @@ def _classement(api, league: int, season: int, home_id: int, away_id: int,
     """Classement COMPLET du championnat — bypass cache si le match est live/récent."""
     try:
         data = api.get("standings", {"league": league, "season": season}, use_cache=not frais)
-    except Exception:
+    except Exception as e:
+        log.exception("classement: ÉCHEC league=%s season=%s : %s", league, season, e)
         return None
     resp = data.get("response", [])
     if not resp:
@@ -320,14 +338,15 @@ def _derniers_matchs(api, team_id: int) -> list[dict]:
                 "a_domicile": est_dom,
             })
         return out
-    except Exception:
+    except Exception as e:
+        log.exception("derniers_matchs: ÉCHEC team=%s : %s", team_id, e)
         return []
 
 
 def _h2h(api, home_id: int, away_id: int) -> list[dict]:
     """5 dernières confrontations directes."""
     try:
-        data = api.get("fixtures", {"h2h": f"{home_id}-{away_id}", "last": 5})
+        data = api.get("fixtures/headtohead", {"h2h": f"{home_id}-{away_id}", "last": 5})
         out = []
         for f in data.get("response", []):
             sh = f["score"]["fulltime"]["home"]
@@ -342,7 +361,8 @@ def _h2h(api, home_id: int, away_id: int) -> list[dict]:
                 "home_id": f["teams"]["home"]["id"],
             })
         return out
-    except Exception:
+    except Exception as e:
+        log.exception("h2h: ÉCHEC %s-%s : %s", home_id, away_id, e)
         return []
 
 
@@ -351,7 +371,22 @@ def _compos(api, fixture_id: int, status: str = "") -> list[dict]:
     try:
         # Pour les matchs actifs ou récents, on force un fetch frais
         frais = status in STATUTS_LIVE or status in STATUTS_UPCOMING or status == ""
+        log.info("compos: fixture=%s status=%s (fetch %s)", fixture_id, status,
+                 "FRAIS" if frais else "cache")
         data = api.get("fixtures/lineups", {"fixture": fixture_id}, use_cache=not frais)
+        n = len(data.get("response", []))
+
+        # Auto-réparation : si le cache renvoie une compo vide (mise en cache
+        # avant publication des lineups), on retente une fois sans cache.
+        if n == 0 and not frais:
+            log.warning("compos: fixture=%s vide en cache -> retry sans cache", fixture_id)
+            data = api.get("fixtures/lineups", {"fixture": fixture_id}, use_cache=False)
+            n = len(data.get("response", []))
+
+        log.info("compos: fixture=%s -> %s équipe(s)", fixture_id, n)
+        if n == 0:
+            log.warning("compos: fixture=%s AUCUNE compo (API n'a pas encore les lineups)", fixture_id)
+
         out = []
         for t in data.get("response", []):
             out.append({
@@ -375,20 +410,25 @@ def _compos(api, fixture_id: int, status: str = "") -> list[dict]:
                 ],
             })
         return out
-    except Exception:
+    except Exception as e:
+        log.exception("compos: ÉCHEC fixture=%s : %s", fixture_id, e)
         return []
 
 
 def _detail_match(api, fixture_id: int, stats_season: int | None = None) -> dict:
     """Construit le détail complet d'un match (probas, value, conseil, équipes)."""
+    log.info("detail_match: fixture=%s ====================", fixture_id)
     # Sans cache : le statut/score d'un match évolue (NS -> live -> FT). Un
     # fixture mis en cache à l'état "à venir" donnerait un score périmé.
     data = api.get("fixtures", {"id": fixture_id}, use_cache=False)
     resp = data.get("response", [])
     if not resp:
+        log.warning("detail_match: fixture=%s INTROUVABLE", fixture_id)
         raise HTTPException(status_code=404, detail="Match introuvable")
     f = resp[0]
     fx = fixtures_depuis_reponse([f])[0]
+    log.info("detail_match: %s vs %s | status=%s | score=%s-%s",
+             fx.home_name, fx.away_name, fx.status, fx.buts_dom, fx.buts_ext)
 
     res = analyser_fixture(api, fx, stats_season=stats_season)
     if res:
@@ -459,8 +499,10 @@ def _multi_modeles(api, fx, res: dict) -> dict:
         p_elo = proba_1x2_elo(r_home, r_away, terrain_neutre=neutre)
         elo_info = {"rating_dom": round(r_home), "rating_ext": round(r_away),
                     "ecart": round(r_home - r_away), "terrain_neutre": neutre}
-    except Exception:
-        pass
+        log.info("elo: fixture=%s %s vs %s -> %s", fx.fixture_id,
+                 elo_info["rating_dom"], elo_info["rating_ext"], p_elo)
+    except Exception as e:
+        log.exception("elo: ÉCHEC fixture=%s : %s", fx.fixture_id, e)
 
     # 3 — Marché (cotes 1X2, vig retiré)
     p_marche = None
@@ -512,17 +554,21 @@ def match_ia(fixture_id: int, stats_season: int | None = None, force: int = 0):
         if not force:
             cache = store.get_analyse_ia(fixture_id)
             if cache:
+                log.info("ia: fixture=%s servie depuis le cache", fixture_id)
                 return JSONResponse(cache)
 
+        log.info("ia: fixture=%s analyse DeepSeek (force=%s)…", fixture_id, force)
         api = ApiFootball()
         detail = _detail_match(api, fixture_id, stats_season)
         res = analyser_avec_ia(api, detail)
         store.save_analyse_ia(fixture_id, res)
         res["cache"] = False
+        log.info("ia: fixture=%s OK (prediction=%s)", fixture_id, res.get("prediction"))
         return JSONResponse(res)
     except HTTPException:
         raise
     except Exception as e:
+        log.exception("ia: ÉCHEC fixture=%s : %s", fixture_id, e)
         return JSONResponse({"erreur": str(e)}, status_code=500)
 
 

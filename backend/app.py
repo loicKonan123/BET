@@ -736,13 +736,23 @@ def player_detail(player_id: int):
         if not resp:
             raise HTTPException(status_code=404, detail="Joueur introuvable")
 
-        p     = resp[0]["player"]
-        stats = resp[0].get("statistics", [{}])[0]
-        team  = stats.get("team", {})
-        games = stats.get("games", {})
-        goals = stats.get("goals", {})
-        cards = stats.get("cards", {})
-        passes_stat = stats.get("passes", {})
+        p          = resp[0]["player"]
+        all_stats  = resp[0].get("statistics", [{}])
+
+        # Équipe principale = compétition avec le plus de minutes jouées
+        main = max(all_stats, key=lambda s: s.get("games", {}).get("minutes") or 0)
+        team = main.get("team", {})
+
+        def _sum(key1: str, key2: str) -> int:
+            return sum((s.get(key1, {}).get(key2) or 0) for s in all_stats)
+
+        def _avg_rating() -> str | None:
+            pairs = [(float(s["games"]["rating"]), s["games"].get("appearences") or 1)
+                     for s in all_stats if s.get("games", {}).get("rating")]
+            if not pairs: return None
+            num = sum(r * w for r, w in pairs)
+            den = sum(w for _, w in pairs)
+            return f"{num / den:.1f}" if den else None
 
         return JSONResponse({
             "id": p["id"],
@@ -754,21 +764,21 @@ def player_detail(player_id: int):
             "naissance": p.get("birth", {}).get("date"),
             "taille": p.get("height"),
             "poids": p.get("weight"),
-            "poste": games.get("position"),
+            "poste": main.get("games", {}).get("position"),
             "equipe_id": team.get("id"),
             "equipe": team.get("name"),
             "equipe_logo": team.get("logo"),
             "saison": season,
             "stats": {
-                "matchs": games.get("appearences") or 0,
-                "titularisations": games.get("lineups") or 0,
-                "minutes": games.get("minutes") or 0,
-                "buts": goals.get("total") or 0,
-                "passes_decisives": goals.get("assists") or 0,
-                "cartons_jaunes": cards.get("yellow") or 0,
-                "cartons_rouges": cards.get("red") or 0,
-                "passes": passes_stat.get("total") or 0,
-                "note": games.get("rating"),
+                "matchs": _sum("games", "appearences"),
+                "titularisations": _sum("games", "lineups"),
+                "minutes": _sum("games", "minutes"),
+                "buts": _sum("goals", "total"),
+                "passes_decisives": _sum("goals", "assists"),
+                "cartons_jaunes": _sum("cards", "yellow"),
+                "cartons_rouges": _sum("cards", "red"),
+                "passes": _sum("passes", "total"),
+                "note": _avg_rating(),
             },
         })
     except HTTPException:

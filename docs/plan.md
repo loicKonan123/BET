@@ -50,6 +50,7 @@ On ne mise pas dans l'app : on analyse, on conseille, on suit la précision des 
 - ✅ Analytics : taux de réussite, tickets gagnés/perdus/en attente
 
 ### Cerveau IA (DeepSeek)
+- ✅ **Verdict d'équipe (IA + consensus)** — l'avis de l'IA est FUSIONNÉ avec le consensus statistique par pool logarithmique (`_fusion_equipe`, consensus pondéré 55%). Sur un match net, l'IA va dans le sens des modèles ; sur un match ouvert, elle garde sa marge. Fini les verdicts contradictoires : un seul résultat d'équipe affiché. Prompt recadré « travail d'équipe » : confirmer le consensus, ne s'en écarter qu'avec un facteur qualitatif majeur (jamais sur la seule forme récente), value toujours calculée contre le marché. Écart IA↔consensus affiché en transparence
 - ✅ Analyste DeepSeek (reasoner) : raisonne sur dossier complet → **produit ses propres probabilités finales**
 - ✅ Cache permanent des analyses IA
 - ✅ **Nouveau pipeline IA** : Poisson = référence statistique (input), DeepSeek = prédicteur final

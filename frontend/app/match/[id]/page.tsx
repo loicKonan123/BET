@@ -566,37 +566,62 @@ export default function MatchPage() {
                 {ia && (
                   <div className="flex flex-col gap-lg">
 
-                    {/* Probas IA — résultat principal */}
-                    {ia.probabilites_ia && (
+                    {/* Verdict d'équipe (IA + consensus) — résultat principal */}
+                    {(ia.probabilites_finales || ia.probabilites_ia) && (() => {
+                      const fin = ia.probabilites_finales;
+                      const dom = fin ? fin["1"] : (ia.probabilites_ia?.victoire_domicile ?? 0);
+                      const nul = fin ? fin["X"] : (ia.probabilites_ia?.nul ?? 0);
+                      const ext = fin ? fin["2"] : (ia.probabilites_ia?.victoire_exterieur ?? 0);
+                      const conf = ia.confiance_finale ?? ia.confiance;
+                      const pred = ia.prediction_equipe ?? ia.prediction;
+                      const div = ia.divergence_consensus ?? null;
+                      return (
                       <div className="bg-secondary-container/10 border border-secondary/20 rounded-xl p-md">
                         <div className="flex items-center gap-sm mb-md">
-                          <Icon name="insights" className="text-secondary" style={{ fontSize: 18 }} />
-                          <span className="font-label-sm text-label-sm uppercase tracking-widest text-secondary">Probabilités IA</span>
-                          {ia.confiance && (
-                            <span className={`ml-auto font-label-sm text-label-sm px-sm py-0.5 rounded-full ${ia.confiance === "élevée" ? "bg-primary/20 text-primary" : ia.confiance === "moyenne" ? "bg-tertiary/20 text-tertiary" : "bg-white/10 text-on-surface-variant"}`}>
-                              Confiance {ia.confiance}
+                          <Icon name="groups" className="text-secondary" style={{ fontSize: 18 }} />
+                          <span className="font-label-sm text-label-sm uppercase tracking-widest text-secondary">
+                            {fin ? "Verdict d'équipe (IA + consensus)" : "Probabilités IA"}
+                          </span>
+                          {conf && (
+                            <span className={`ml-auto font-label-sm text-label-sm px-sm py-0.5 rounded-full ${conf === "élevée" ? "bg-primary/20 text-primary" : conf === "moyenne" ? "bg-tertiary/20 text-tertiary" : "bg-white/10 text-on-surface-variant"}`}>
+                              Confiance {conf}
                             </span>
                           )}
                         </div>
                         {/* Barre de probabilités */}
                         <div className="flex rounded overflow-hidden h-3 mb-sm">
-                          <div className="bg-primary transition-all" style={{ width: `${Math.round((ia.probabilites_ia.victoire_domicile ?? 0) * 100)}%` }} />
-                          <div className="bg-outline transition-all" style={{ width: `${Math.round((ia.probabilites_ia.nul ?? 0) * 100)}%` }} />
-                          <div className="bg-secondary transition-all" style={{ width: `${Math.round((ia.probabilites_ia.victoire_exterieur ?? 0) * 100)}%` }} />
+                          <div className="bg-primary transition-all" style={{ width: `${Math.round(dom * 100)}%` }} />
+                          <div className="bg-outline transition-all" style={{ width: `${Math.round(nul * 100)}%` }} />
+                          <div className="bg-secondary transition-all" style={{ width: `${Math.round(ext * 100)}%` }} />
                         </div>
                         <div className="flex justify-between font-label-md text-label-md">
-                          <span className="text-primary">Dom. {Math.round((ia.probabilites_ia.victoire_domicile ?? 0) * 100)}%</span>
-                          <span className="text-on-surface-variant">Nul {Math.round((ia.probabilites_ia.nul ?? 0) * 100)}%</span>
-                          <span className="text-secondary">Ext. {Math.round((ia.probabilites_ia.victoire_exterieur ?? 0) * 100)}%</span>
+                          <span className="text-primary">Dom. {Math.round(dom * 100)}%</span>
+                          <span className="text-on-surface-variant">Nul {Math.round(nul * 100)}%</span>
+                          <span className="text-secondary">Ext. {Math.round(ext * 100)}%</span>
                         </div>
-                        {ia.prediction && (
+                        {pred && (
                           <div className="mt-md pt-md border-t border-white/10 flex items-center gap-sm">
                             <Icon name="emoji_events" className="text-tertiary" style={{ fontSize: 18 }} />
-                            <span className="font-body-lg text-body-lg text-on-surface font-semibold">Prédiction : {ia.prediction}</span>
+                            <span className="font-body-lg text-body-lg text-on-surface font-semibold">Prédiction : {pred}</span>
+                          </div>
+                        )}
+                        {/* Avis brut de l'IA + écart avec l'équipe (transparence) */}
+                        {fin && ia.probabilites_ia && (
+                          <div className="mt-sm flex flex-wrap items-center gap-x-md gap-y-xs font-label-sm text-label-sm text-on-surface-variant/70">
+                            <span>
+                              Avis IA seul : {Math.round((ia.probabilites_ia.victoire_domicile ?? 0) * 100)}% / {Math.round((ia.probabilites_ia.nul ?? 0) * 100)}% / {Math.round((ia.probabilites_ia.victoire_exterieur ?? 0) * 100)}%
+                            </span>
+                            {div != null && div >= 0.15 && (
+                              <span className="flex items-center gap-xs text-tertiary">
+                                <Icon name="info" style={{ fontSize: 14 }} />
+                                Écart notable avec le consensus ({Math.round(div * 100)} pts) — verdict pondéré
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>
-                    )}
+                      );
+                    })()}
 
                     {/* Analyse narrative */}
                     <p className="font-body-lg text-body-lg text-on-surface">{ia.analyse}</p>

@@ -161,6 +161,10 @@ export async function getMatch(fixtureId: number): Promise<MatchDetail> {
 // ---- Analyse IA (cerveau DeepSeek) ----
 export type AnalyseIA = {
   probabilites_ia: { victoire_domicile: number; nul: number; victoire_exterieur: number } | null;
+  probabilites_finales?: { "1": number; X: number; "2": number } | null;
+  prediction_equipe?: string | null;
+  confiance_finale?: string | null;
+  divergence_consensus?: number | null;
   prediction: string | null;
   confiance: string | null;
   analyse: string;

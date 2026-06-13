@@ -11,6 +11,7 @@ L'IA n'est PAS contrainte par le Poisson : elle peut l'ajuster vers le haut
 ou le bas selon les facteurs que le modèle statistique ne voit pas.
 """
 import json
+import math
 import os
 import re
 
@@ -19,6 +20,34 @@ from openai import OpenAI
 from .api_client import ApiFootball
 
 BASE_URL = "https://api.deepseek.com"
+
+# Poids de l'équipe : le consensus (qui inclut le marché, membre le plus fiable)
+# pèse un peu plus que l'avis de l'IA. La fusion log garantit que l'IA va dans
+# le sens des modèles sur les matchs nets, tout en la laissant nuancer.
+POIDS_CONSENSUS = 0.55
+
+LIB_1X2 = {"1": "Victoire domicile", "X": "Match nul", "2": "Victoire extérieur"}
+
+
+def _fusion_equipe(p_ia: dict | None, p_cons: dict | None,
+                   poids_consensus: float = POIDS_CONSENSUS) -> dict | None:
+    """Verdict d'équipe : pool logarithmique de l'avis IA et du consensus.
+
+    Clés attendues : {'1','X','2'}. Si une source manque, renvoie l'autre.
+    """
+    if not p_cons:
+        return p_ia
+    if not p_ia:
+        return p_cons
+    eps = 1e-9
+    w_c = poids_consensus
+    w_i = 1.0 - w_c
+    out = {}
+    for k in ("1", "X", "2"):
+        out[k] = math.exp(w_i * math.log(max(p_ia.get(k, 0.0), eps))
+                          + w_c * math.log(max(p_cons.get(k, 0.0), eps)))
+    s = sum(out.values())
+    return {k: round(v / s, 4) for k, v in out.items()} if s > 0 else None
 
 # Nations hôtes du Mondial 2026 (terrain réel = domicile, pas neutre)
 HOTES_WC_2026 = {2, 16, 101}  # USA, Mexico, Canada
@@ -192,27 +221,33 @@ Tu es EDGE Analyste, un système de prédiction expert en football. Tu reçois u
 dossier complet sur un match : statistiques Poisson, forme récente, H2H, classement, \
 blessures, cotes bookmakers et contexte du tournoi.
 
-Tu reçois TROIS modèles statistiques (Poisson, Elo, marché) et leur consensus \
-pondéré. Pars de ce consensus comme ANCRE — c'est une base solide, surtout le \
-marché (closing line) qui est très dur à battre. Puis ajuste avec ton jugement.
+Tu fais partie d'une ÉQUIPE de prédiction. Tes coéquipiers sont trois modèles \
+statistiques (Poisson ajusté, Elo, marché) dont le consensus pondéré t'est \
+fourni. Le marché (closing line) est le membre le plus fiable de l'équipe — il \
+est très dur à battre. Ton rôle n'est PAS de contredire l'équipe, mais de \
+CONFIRMER le consensus et de l'affiner avec ce que les chiffres ne voient pas.
 
-Ton rôle : produire une VRAIE prédiction, pas juste répéter un modèle.
-Tu dois intégrer tout ce que les modèles statistiques ne voient pas :
+Sur un match net (consensus marqué pour une issue), tu dois aller dans le MÊME \
+SENS que l'équipe. Tu ne t'écartes nettement du consensus QUE si un facteur \
+qualitatif majeur le justifie explicitement (blessure d'un cadre, enjeu \
+décisif, terrain particulier) — JAMAIS sur la seule forme récente, qui est \
+déjà captée par les modèles et trompe souvent (recency bias).
+
+Apporte la valeur que les modèles n'ont pas :
 - Contexte (phase du tournoi, enjeu, doit-gagner ?)
 - Terrain (nation hôte, supporters, pression)
-- Forme récente vs historique (une équipe en feu vs stats moyennes)
-- Qualité des adversaires récents (stats gonflées contre équipes faibles ?)
-- H2H (certaines équipes dominent psychologiquement les autres)
-- Blessures clés
-
-Tu peux (et dois si justifié) t'écarter des probabilités Poisson.
+- Blessures clés, suspensions
+- H2H (domination psychologique récurrente)
 
 Règles strictes :
 1. Appuie chaque affirmation sur une donnée précise du dossier.
 2. Pas de clichés ("les deux équipes se respectent", "match serré attendu").
 3. Si une donnée manque, dis-le brièvement — ne l'invente pas.
 4. Sois cohérent : tes probabilités IA doivent sommer à 1.0 (±0.01).
-5. Réponds en français.
+5. Pour la value, compare TOUJOURS à la cote du marché (proba × cote − 1).
+   N'annonce JAMAIS une value en te basant sur ta propre proba gonflée.
+6. Si tu t'écartes du consensus, dis-le et justifie par un facteur précis.
+7. Réponds en français.
 """
 
 _INSTRUCTION = """\
@@ -286,4 +321,29 @@ def analyser_avec_ia(api: ApiFootball, detail: dict) -> dict:
     resultat = _extraire_json(contenu)
     resultat["modele"] = modele
     resultat["dossier"] = dossier
+
+    # ---- Verdict d'équipe : fusion de l'avis IA et du consensus ----
+    p_ia_raw = resultat.get("probabilites_ia")
+    p_ia = None
+    if p_ia_raw:
+        p_ia = {"1": p_ia_raw.get("victoire_domicile"),
+                "X": p_ia_raw.get("nul"),
+                "2": p_ia_raw.get("victoire_exterieur")}
+    mm = detail.get("multi_modeles") or {}
+    p_cons = (mm.get("consensus") or {}).get("probabilites")
+
+    finales = _fusion_equipe(p_ia, p_cons)
+    resultat["probabilites_finales"] = finales
+    if finales:
+        cle = max(finales, key=finales.get)
+        resultat["prediction_equipe"] = LIB_1X2[cle]
+        resultat["confiance_finale"] = (
+            "élevée" if finales[cle] >= 0.65
+            else "moyenne" if finales[cle] >= 0.50 else "faible"
+        )
+        # Transparence : écart max entre l'avis IA et le consensus (0 = accord total)
+        if p_ia and p_cons and all(p_ia.get(k) is not None for k in ("1", "X", "2")):
+            resultat["divergence_consensus"] = round(
+                max(abs(p_ia[k] - p_cons[k]) for k in ("1", "X", "2")), 4)
+
     return resultat

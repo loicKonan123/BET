@@ -67,12 +67,75 @@ def recuperer_cotes(api: ApiFootball, fixture_id: int) -> dict[str, float]:
     return parser_cotes(data.get("response", []))
 
 
-def probas_marche_1x2(cotes: dict[str, float]) -> dict[str, float] | None:
+def _devig_proportionnel(inv: dict[str, float]) -> dict[str, float]:
+    """Normalisation proportionnelle (multiplicative) — méthode de base.
+
+    Simple mais ignore le favorite-longshot bias : sur-estime les favoris et
+    sous-estime les outsiders. Sert de repli si Shin ne converge pas.
+    """
+    overround = sum(inv.values())
+    return {k: v / overround for k, v in inv.items()}
+
+
+def _devig_shin(inv: dict[str, float], tol: float = 1e-10, max_iter: int = 100) -> dict[str, float] | None:
+    """Retrait de marge par la méthode de Shin (1992).
+
+    Modélise le marché comme un mélange de parieurs informés et non informés ;
+    le paramètre z = proportion de money « informé » qui crée la marge. Corrige
+    le favorite-longshot bias bien mieux que la normalisation proportionnelle
+    (méthode de référence dans la littérature et chez Pinnacle).
+
+    Proba vraie : p_i = [√(z² + 4(1−z)·π_i²/B) − z] / (2(1−z))
+    où π_i = 1/cote_i (proba implicite brute), B = Σ π_i (booksum/overround).
+    z est résolu par bissection pour que Σ p_i = 1.
+    """
+    pis = list(inv.values())
+    B = sum(pis)
+    if B <= 1.0:  # pas de marge (ou cotes incohérentes) -> rien à corriger
+        return None
+
+    def somme_probas(z: float) -> float:
+        if z >= 1.0:
+            return float("inf")
+        s = 0.0
+        for pi in pis:
+            rad = z * z + 4.0 * (1.0 - z) * (pi * pi) / B
+            s += (rad ** 0.5 - z) / (2.0 * (1.0 - z))
+        return s
+
+    # Σp(z) décroît avec z ; on cherche z tel que Σp(z) = 1 par bissection.
+    lo, hi = 0.0, 0.5
+    if somme_probas(lo) < 1.0:  # déjà ≤ 1 sans correction : marge dégénérée
+        return None
+    for _ in range(max_iter):
+        mid = (lo + hi) / 2.0
+        s = somme_probas(mid)
+        if abs(s - 1.0) < tol:
+            break
+        if s > 1.0:
+            lo = mid
+        else:
+            hi = mid
+    z = (lo + hi) / 2.0
+
+    cles = list(inv.keys())
+    probas = {}
+    for cle, pi in zip(cles, pis):
+        rad = z * z + 4.0 * (1.0 - z) * (pi * pi) / B
+        probas[cle] = (rad ** 0.5 - z) / (2.0 * (1.0 - z))
+    # micro-renormalisation (résidu de bissection)
+    tot = sum(probas.values())
+    return {k: v / tot for k, v in probas.items()} if tot > 0 else None
+
+
+def probas_marche_1x2(cotes: dict[str, float], methode: str = "shin") -> dict[str, float] | None:
     """Convertit les cotes 1X2 en probabilités réelles, marge (vig) retirée.
 
     Une cote implique une proba brute 1/cote. La somme des 1/cote dépasse 1 :
-    l'excédent est la marge du bookmaker (~5% en consensus, ~2.5% chez Pinnacle).
-    On normalise proportionnellement pour retrouver les probabilités « pures ».
+    l'excédent est la marge du bookmaker (~5% consensus, ~2.5% chez Pinnacle).
+
+    methode="shin" (défaut) : corrige le favorite-longshot bias (recommandé).
+    methode="proportionnel" : normalisation multiplicative simple.
 
     Le closing line du marché est le meilleur prédicteur connu : ces probas
     servent d'ancre de calibration. Renvoie None si les 3 cotes manquent.
@@ -81,7 +144,11 @@ def probas_marche_1x2(cotes: dict[str, float]) -> dict[str, float] | None:
         inv = {k: 1.0 / cotes[k] for k in ("1", "X", "2")}
     except (KeyError, ZeroDivisionError):
         return None
-    overround = sum(inv.values())
-    if overround <= 0:
+    if sum(inv.values()) <= 0:
         return None
-    return {k: v / overround for k, v in inv.items()}
+
+    if methode == "shin":
+        shin = _devig_shin(inv)
+        if shin is not None:
+            return shin
+    return _devig_proportionnel(inv)

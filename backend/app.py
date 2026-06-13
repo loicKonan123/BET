@@ -30,6 +30,7 @@ from src import store
 from src.analyste import analyser_avec_ia
 from src.api_client import ApiFootball
 from src.blend import conseil_consensus, fusionner_1x2
+from src.dc_service import modele_club, modele_national
 from src.elo import proba_1x2_elo
 from src.elo_service import assurer_ratings_club, assurer_ratings_nationaux, rating_de
 from src.ligues_mise_o_jeu import IDS_SOCCER, LIGUES_SOCCER
@@ -479,9 +480,27 @@ def _multi_modeles(api, fx, res: dict) -> dict:
     consensus statistique. Tolérant aux erreurs : toute source qui échoue est
     simplement omise.
     """
-    # 1 — Poisson (déjà calculé dans res)
+    # 1 — Poisson. On privilégie le modèle Dixon-Coles AJUSTÉ (MLE, attaque/
+    #     défense démêlées de la qualité des adversaires). Repli sur le Poisson
+    #     par moyennes brutes (déjà dans res) si le fit n'est pas disponible.
     probas = res.get("probabilites", {})
     p_poisson = {k: probas.get(k) for k in ("1", "X", "2")} if probas.get("1") is not None else None
+    poisson_ajuste = False
+    try:
+        est_national = fx.league in LIGUES_NATIONALES
+        if est_national:
+            modele = modele_national(api)
+        else:
+            modele = modele_club(api, fx.league, [fx.season - 1, fx.season])
+        if modele and modele.connait(fx.home_id) and modele.connait(fx.away_id):
+            neutre_dc = fx.league == 1 and fx.home_id not in HOTES_WC_2026
+            p_poisson = modele.proba_1x2(fx.home_id, fx.away_id, terrain_neutre=neutre_dc)
+            poisson_ajuste = True
+            log.info("dixon-coles ajusté: fixture=%s -> %s", fx.fixture_id,
+                     {k: round(v, 3) for k, v in p_poisson.items()})
+    except Exception as e:
+        log.exception("dixon-coles: ÉCHEC fixture=%s (repli moyennes brutes) : %s",
+                      fx.fixture_id, e)
 
     # 2 — Elo
     p_elo = None
@@ -525,6 +544,7 @@ def _multi_modeles(api, fx, res: dict) -> dict:
 
     return {
         "poisson": {k: round(v, 4) for k, v in p_poisson.items()} if p_poisson else None,
+        "poisson_ajuste": poisson_ajuste,
         "elo": {k: round(v, 4) for k, v in p_elo.items()} if p_elo else None,
         "elo_info": elo_info,
         "marche": {k: round(v, 4) for k, v in p_marche.items()} if p_marche else None,

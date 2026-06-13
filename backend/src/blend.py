@@ -5,14 +5,18 @@ EDGE dispose de trois estimations indépendantes du 1X2 :
   2. Elo (force globale, corrige la force de calendrier).
   3. Marché (closing line Pinnacle/consensus, vig retiré) — meilleur prédicteur connu.
 
-On les combine en une moyenne pondérée. Le marché, quand il est disponible,
-reçoit le poids le plus fort (la recherche montre qu'il est dur à battre). En
-son absence, Elo et Poisson se partagent le poids.
+On les combine par POOL LOGARITHMIQUE (moyenne géométrique pondérée). La
+recherche (Ranjan & Gneiting, JRSS-B 2010) montre qu'une moyenne linéaire de
+prévisions calibrées est nécessairement décalibrée et trop molle ; le pool
+logarithmique minimise la divergence KL aux sources et préserve la netteté
+(externally Bayesian). Le marché, quand il est disponible, reçoit le poids le
+plus fort (dur à battre). En son absence, Elo et Poisson se partagent le poids.
 
 Le résultat sert d'ANCRE statistique. DeepSeek reste l'arbitre final : il voit
 les trois sources + le consensus, et peut s'en écarter s'il détecte un facteur
 qualitatif majeur (blessure clé, enjeu, météo).
 """
+from math import exp, log
 
 # Poids par défaut quand le marché est disponible
 POIDS_AVEC_MARCHE = {"marche": 0.50, "elo": 0.27, "poisson": 0.23}
@@ -119,8 +123,13 @@ def fusionner_1x2(
         total_poids = 1.0
     poids = {s: w / total_poids for s, w in poids.items()}
 
+    # Pool LOGARITHMIQUE : moyenne géométrique pondérée des probabilités.
+    # consensus_k ∝ exp(Σ_s w_s · ln p_s,k). Préserve la netteté (contrairement
+    # à la moyenne arithmétique qui lisse vers l'uniforme) et minimise la
+    # divergence KL aux sources. Garde-fou EPS pour éviter ln(0).
+    EPS = 1e-9
     consensus = {
-        k: sum(sources[s][k] * poids[s] for s in sources)
+        k: exp(sum(poids[s] * log(max(sources[s][k], EPS)) for s in sources))
         for k in CLES_1X2
     }
     consensus = _normaliser(consensus)

@@ -14,9 +14,10 @@ On ne mise pas dans l'app : on analyse, on conseille, on suit la précision des 
 - ✅ Moteur **Poisson** (1X2, Over/Under 2.5, Over/Under 1.5, BTTS, double chance)
 - ✅ **Correction Dixon-Coles (τ, rho ≈ -0.13)** — corrige la sous-estimation des scores faibles (0-0, 1-0, 0-1, 1-1)
 - ✅ **Pondération temporelle (time-decay, ξ=0.003/j)** — la forme récente pèse plus que les matchs anciens
+- ✅ **Poisson AJUSTÉ par MLE (vrai Dixon-Coles)** — coefficients attaque/défense estimés simultanément sur toute la ligue par maximum de vraisemblance (`dixon_coles_fit.py` + `dc_service.py`). Démêle la force d'une équipe de la qualité de ses adversaires → corrige le biais de force de calendrier **dans le Poisson lui-même** (plus seulement via l'Elo). Régularisation L2 = shrinkage des équipes peu vues. **Validé out-of-sample : log-loss 0.934 vs 0.982 (moyennes brutes) sur EPL 2023**
 - ✅ **Système Elo maison** (style World Football Elo / 538) — note de force globale, K par compétition (CDM=60), multiplicateur de marge de victoire → **corrige la force de calendrier** (le bug Mexico/RSA)
-- ✅ **Ancrage marché** — cotes converties en probas avec **marge (vig) retirée** ; le closing line = meilleur prédicteur connu
-- ✅ **Fusion consensus pondérée** (Poisson 23% + Elo 27% + Marché 50%) + mesure d'**accord entre modèles**
+- ✅ **Ancrage marché** — cotes converties en probas avec **marge (vig) retirée par la méthode de Shin (1992)** — corrige le favorite-longshot bias, bien meilleur que la normalisation proportionnelle (référence académique / Pinnacle)
+- ✅ **Fusion consensus par POOL LOGARITHMIQUE** (moyenne géométrique pondérée : Poisson 23% + Elo 27% + Marché 50%) — préserve la netteté, minimise la divergence KL aux sources (Ranjan & Gneiting, JRSS-B 2010) ; la moyenne linéaire décalibre. + mesure d'**accord entre modèles**
 - ✅ Stats équipes → buts attendus — mode **club** ET mode **équipes nationales** (stats dom/ext séparées)
 - ✅ Détection des **value bets** + génération de **combinés** (cote ~3.00)
 - ✅ Validateur **Mise-o-jeu** (liste blanche) → jamais de match injouable
@@ -160,11 +161,13 @@ backend/               ← FastAPI, Python
   app.py               ← tous les endpoints
   src/
     api_client.py      ← client API-Football + cache disque
-    poisson.py         ← modèle Poisson + correction Dixon-Coles
+    poisson.py         ← modèle Poisson + correction Dixon-Coles (grille de scores)
+    dixon_coles_fit.py ← estimation MLE attaque/défense (scipy) — vrai Dixon-Coles
+    dc_service.py      ← fit + cache mémoire du modèle Dixon-Coles par ligue
     elo.py             ← moteur Elo (math pure) + buts attendus
     elo_service.py     ← construction/cache des ratings Elo
-    blend.py           ← fusion consensus Poisson+Elo+Marché
-    odds_parser.py     ← cotes consensus + retrait de la vig
+    blend.py           ← fusion consensus (pool logarithmique) Poisson+Elo+Marché
+    odds_parser.py     ← cotes consensus + retrait de la vig (Shin)
     team_stats.py      ← stats dom/ext + pondération temporelle
     pipeline.py        ← scan fixtures + analyse
     backtest.py        ← replay modèle + Brier/log-loss/calibration

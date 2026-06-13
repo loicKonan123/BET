@@ -42,6 +42,8 @@ On ne mise pas dans l'app : on analyse, on conseille, on suit la précision des 
 - ✅ Heures Montréal (AM/PM)
 
 ### Tickets & suivi
+- ✅ **Tickets fondés sur la CONFIANCE du consensus** (`tickets.py` + `consensus.py`) — refonte : on ne chasse plus une cote cible. Pour chaque match on calcule le consensus (Poisson ajusté + Elo + marché) et on ne retient que les issues à forte confiance (simple ≥ 58 %, double chance ≥ 72 %). Les sélections sont triées par probabilité ; le ticket #1 = les paris les plus sûrs
+- ✅ **Sélections cliquables** sur la carte ticket → `/match/{fixture_id}` (détail de l'analyse) + proba affichée par sélection
 - ✅ Tickets auto-générés + sauvegarde + historique
 - ✅ Ticket builder manuel (panier persistant localStorage)
 - ✅ Auto-settlement (grading automatique via score API-Football)

@@ -29,21 +29,24 @@ log = logging.getLogger("edge")
 from src import store
 from src.analyste import analyser_avec_ia
 from src.api_client import ApiFootball
-from src.blend import conseil_consensus, fusionner_1x2
-from src.dc_service import modele_club, modele_national
-from src.elo import proba_1x2_elo
-from src.elo_service import assurer_ratings_club, assurer_ratings_nationaux, rating_de
+from src.blend import conseil_consensus
+from src.consensus import consensus_match
 from src.ligues_mise_o_jeu import IDS_SOCCER, LIGUES_SOCCER
-from src.odds_parser import probas_marche_1x2
+from src.odds_parser import recuperer_cotes
 from src.pipeline import (
     STATUTS_LIVE,
     STATUTS_TERMINES,
     STATUTS_UPCOMING,
+    _nom_ligue,
     analyser_fixture,
     analyser_fixture_sans_cotes,
     conseil_de_paris,
     fixtures_depuis_reponse,
-    generer_pronostics,
+)
+from src.tickets import (
+    construire_selection,
+    generer_tickets_confiance,
+    selection_confiance,
 )
 
 
@@ -228,20 +231,78 @@ def generer(
     valider: int = 1,           # 1 = liste blanche Mise-o-jeu ; 0 = tous
     jours: int = 7,             # nombre de jours à venir à scanner
 ):
-    """Scan AUTOMATIQUE : génère les tickets sur les matchs jouables Mise-o-jeu."""
+    """Scan AUTOMATIQUE : tickets sur les issues les PLUS PROBABLES (consensus).
+
+    Nouvelle philosophie : on ne chasse plus une cote cible. Pour chaque match
+    on calcule le consensus multi-modèles (Poisson ajusté + Elo + marché) et on
+    ne retient que les issues à forte confiance. Les tickets regroupent les
+    paris les plus sûrs (le ticket #1 = les plus solides).
+    """
     try:
         api = ApiFootball()
         fixtures, dates_ok = _scanner_fixtures(api, jours, valider, max_matchs)
-        resultat = generer_pronostics(
-            api, fixtures,
-            nb_combines=nb_tickets,
-            cote_cible=cote_cible,
-            stats_season=stats_season,
-        )
-        resultat["dates_scannees"] = dates_ok
-        resultat["validateur_mise_o_jeu"] = bool(valider)
-        return JSONResponse(resultat)
+
+        selections = []
+        analyses = []
+        for fx in fixtures:
+            try:
+                cotes = recuperer_cotes(api, fx.fixture_id)
+            except Exception as e:
+                log.exception("generer: cotes ÉCHEC fixture=%s : %s", fx.fixture_id, e)
+                cotes = {}
+            cotes_1x2 = {k: cotes.get(k) for k in ("1", "X", "2") if cotes.get(k)}
+
+            mm = consensus_match(api, fx.league, fx.season, fx.home_id, fx.away_id,
+                                 cotes_1x2=cotes_1x2 or None)
+            cons = mm["consensus"].get("probabilites")
+            if not cons:
+                continue
+
+            match_label = f"{fx.home_name} - {fx.away_name}"
+            pick = selection_confiance(cons, cotes)
+            analyses.append({
+                "match": match_label,
+                "ligue": _nom_ligue(fx.league),
+                "fixture_id": fx.fixture_id,
+                "date": fx.date,
+                "consensus": cons,
+                "pick": ({"cle": pick[0], "proba": round(pick[1], 4)} if pick else None),
+            })
+
+            if pick:
+                cle, proba = pick
+                sel = construire_selection(match_label, _nom_ligue(fx.league),
+                                           fx.fixture_id, fx.date, cle, proba, cotes)
+                if sel.cote > 0:  # besoin d'une cote pour afficher/grader
+                    selections.append(sel)
+
+        log.info("generer: %s matchs, %s sélections à forte confiance",
+                 len(analyses), len(selections))
+
+        combines = generer_tickets_confiance(selections, nb_tickets=nb_tickets)
+        combines_json = [{
+            "cote_totale": round(c.cote_totale, 2),
+            "proba_reussite": round(c.proba_combinee, 4),
+            "value": round(c.value_combinee, 4),
+            "selections": [
+                {"match": s.match, "ligue": s.ligue, "marche": s.marche,
+                 "cote": s.cote, "proba": round(s.proba, 4),
+                 "fixture_id": s.fixture_id, "cle": s.cle, "match_date": s.match_date}
+                for s in c.selections
+            ],
+        } for c in combines]
+
+        return JSONResponse({
+            "genere_le": datetime.now(timezone.utc).isoformat(),
+            "nb_matchs_analyses": len(analyses),
+            "nb_combines": len(combines_json),
+            "combines": combines_json,
+            "analyses": analyses,
+            "dates_scannees": dates_ok,
+            "validateur_mise_o_jeu": bool(valider),
+        })
     except Exception as e:
+        log.exception("generer: ÉCHEC : %s", e)
         return JSONResponse({"erreur": str(e)}, status_code=500)
 
 
@@ -480,61 +541,20 @@ def _multi_modeles(api, fx, res: dict) -> dict:
     consensus statistique. Tolérant aux erreurs : toute source qui échoue est
     simplement omise.
     """
-    # 1 — Poisson. On privilégie le modèle Dixon-Coles AJUSTÉ (MLE, attaque/
-    #     défense démêlées de la qualité des adversaires). Repli sur le Poisson
-    #     par moyennes brutes (déjà dans res) si le fit n'est pas disponible.
+    # Poisson par moyennes brutes (déjà dans res) servant de repli si le modèle
+    # Dixon-Coles ajusté n'est pas disponible pour ce match.
     probas = res.get("probabilites", {})
-    p_poisson = {k: probas.get(k) for k in ("1", "X", "2")} if probas.get("1") is not None else None
-    poisson_ajuste = False
-    try:
-        est_national = fx.league in LIGUES_NATIONALES
-        if est_national:
-            modele = modele_national(api)
-        else:
-            modele = modele_club(api, fx.league, [fx.season - 1, fx.season])
-        if modele and modele.connait(fx.home_id) and modele.connait(fx.away_id):
-            neutre_dc = fx.league == 1 and fx.home_id not in HOTES_WC_2026
-            p_poisson = modele.proba_1x2(fx.home_id, fx.away_id, terrain_neutre=neutre_dc)
-            poisson_ajuste = True
-            log.info("dixon-coles ajusté: fixture=%s -> %s", fx.fixture_id,
-                     {k: round(v, 3) for k, v in p_poisson.items()})
-    except Exception as e:
-        log.exception("dixon-coles: ÉCHEC fixture=%s (repli moyennes brutes) : %s",
-                      fx.fixture_id, e)
-
-    # 2 — Elo
-    p_elo = None
-    elo_info = None
-    try:
-        est_national = fx.league in LIGUES_NATIONALES
-        if est_national:
-            ratings = assurer_ratings_nationaux(api)
-        else:
-            ratings = assurer_ratings_club(api, fx.league, [fx.season - 1, fx.season])
-        r_home = rating_de(ratings, fx.home_id)
-        r_away = rating_de(ratings, fx.away_id)
-        # Terrain neutre en Coupe du Monde sauf nation hôte à domicile
-        neutre = fx.league == 1 and fx.home_id not in HOTES_WC_2026
-        p_elo = proba_1x2_elo(r_home, r_away, terrain_neutre=neutre)
-        elo_info = {"rating_dom": round(r_home), "rating_ext": round(r_away),
-                    "ecart": round(r_home - r_away), "terrain_neutre": neutre}
-        log.info("elo: fixture=%s %s vs %s -> %s", fx.fixture_id,
-                 elo_info["rating_dom"], elo_info["rating_ext"], p_elo)
-    except Exception as e:
-        log.exception("elo: ÉCHEC fixture=%s : %s", fx.fixture_id, e)
-
-    # 3 — Marché (cotes 1X2, vig retiré)
-    p_marche = None
+    poisson_fallback = ({k: probas.get(k) for k in ("1", "X", "2")}
+                        if probas.get("1") is not None else None)
     cotes_1x2 = {s.get("cle"): s.get("cote") for s in res.get("selections", [])
                  if s.get("cle") in ("1", "X", "2") and s.get("cote")}
-    if len(cotes_1x2) == 3:
-        p_marche = probas_marche_1x2(cotes_1x2)
 
-    consensus = fusionner_1x2(p_poisson, p_elo, p_marche)
+    mm = consensus_match(api, fx.league, fx.season, fx.home_id, fx.away_id,
+                         cotes_1x2=cotes_1x2 or None, poisson_fallback=poisson_fallback)
 
-    # Le conseil est désormais fondé sur le CONSENSUS (cohérent avec la carte),
+    # Le conseil est fondé sur le CONSENSUS (cohérent avec la carte affichée),
     # pas sur le Poisson seul. La value se mesure contre le marché.
-    probas_cons = consensus.get("probabilites")
+    probas_cons = mm["consensus"].get("probabilites")
     if probas_cons:
         cotes_all = {s.get("cle"): s.get("cote") for s in res.get("selections", [])
                      if s.get("cote")}
@@ -542,14 +562,7 @@ def _multi_modeles(api, fx, res: dict) -> dict:
         if conseil:
             res["conseil"] = conseil
 
-    return {
-        "poisson": {k: round(v, 4) for k, v in p_poisson.items()} if p_poisson else None,
-        "poisson_ajuste": poisson_ajuste,
-        "elo": {k: round(v, 4) for k, v in p_elo.items()} if p_elo else None,
-        "elo_info": elo_info,
-        "marche": {k: round(v, 4) for k, v in p_marche.items()} if p_marche else None,
-        "consensus": consensus,
-    }
+    return mm
 
 
 @app.get("/api/match/{fixture_id}")

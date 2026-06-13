@@ -45,8 +45,8 @@ export default function Generate() {
           Générer des tickets
         </h1>
         <p className="font-body-lg text-on-surface-variant">
-          Scan automatique des matchs — value bets calculés
-          par loi de Poisson.
+          Scan automatique des matchs — tickets bâtis sur les issues
+          les plus probables du consensus (Poisson ajusté + Elo + marché).
         </p>
       </div>
 
@@ -90,7 +90,7 @@ export default function Generate() {
             <span className="font-label-md text-label-md text-on-surface font-bold">
               {res
                 ? `${res.nb_matchs_analyses} MATCHS · ${res.nb_combines} TICKETS`
-                : "POISSON_V1 READY"}
+                : "CONSENSUS_V2 READY"}
             </span>
           </div>
         </div>
@@ -153,15 +153,34 @@ export default function Generate() {
               </div>
 
               <div className="flex flex-col gap-sm mb-lg">
-                {c.selections.map((s, j) => (
-                  <div key={j} className="flex items-center justify-between p-sm rounded bg-white/5 border border-white/5">
-                    <div className="flex flex-col">
-                      <span className="font-body-sm text-body-sm text-on-surface">{s.match}</span>
-                      <span className="font-label-sm text-label-sm text-secondary">🏆 {s.ligue} · {s.marche}</span>
+                {c.selections.map((s, j) => {
+                  const contenu = (
+                    <>
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-body-sm text-body-sm text-on-surface truncate">{s.match}</span>
+                        <span className="font-label-sm text-label-sm text-secondary truncate">🏆 {s.ligue} · {s.marche}</span>
+                      </div>
+                      <div className="flex items-center gap-sm flex-shrink-0">
+                        <span className="font-label-sm text-label-sm text-primary">{Math.round(s.proba * 100)}%</span>
+                        <span className="font-label-md text-label-md text-on-surface-variant">{s.cote.toFixed(2)}</span>
+                        {s.fixture_id && <Icon name="chevron_right" className="text-on-surface-variant/40" style={{ fontSize: 16 }} />}
+                      </div>
+                    </>
+                  );
+                  return s.fixture_id ? (
+                    <Link
+                      key={j}
+                      href={`/match/${s.fixture_id}`}
+                      className="flex items-center justify-between gap-sm p-sm rounded bg-white/5 border border-white/5 hover:border-primary/40 hover:bg-white/10 transition-all group"
+                    >
+                      {contenu}
+                    </Link>
+                  ) : (
+                    <div key={j} className="flex items-center justify-between gap-sm p-sm rounded bg-white/5 border border-white/5">
+                      {contenu}
                     </div>
-                    <span className="font-label-md text-label-md text-on-surface-variant">{s.cote.toFixed(2)}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="grid grid-cols-3 gap-sm pt-md border-t border-white/10">

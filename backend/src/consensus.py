@@ -10,6 +10,7 @@ from .blend import fusionner_1x2
 from .dc_service import modele_club, modele_national
 from .elo import proba_1x2_elo
 from .elo_service import assurer_ratings_club, assurer_ratings_nationaux, rating_de
+from .ml_service import modele_club_si_pret
 from .odds_parser import probas_marche_1x2
 
 log = logging.getLogger("edge.consensus")
@@ -72,7 +73,17 @@ def consensus_match(api, league: int, season: int, home_id: int, away_id: int,
     if cotes_1x2 and all(cotes_1x2.get(k) for k in ("1", "X", "2")):
         p_marche = probas_marche_1x2(cotes_1x2)
 
-    consensus = fusionner_1x2(p_poisson, p_elo, p_marche)
+    # 4 — ML (xG) : uniquement si un modèle est déjà entraîné pour cette ligue
+    p_ml = None
+    if league not in LIGUES_NATIONALES:
+        modele_ml = modele_club_si_pret(league)
+        if modele_ml and modele_ml.connait(home_id) and modele_ml.connait(away_id):
+            try:
+                p_ml = modele_ml.proba_1x2(home_id, away_id)
+            except Exception as e:
+                log.exception("ml: ÉCHEC league=%s : %s", league, e)
+
+    consensus = fusionner_1x2(p_poisson, p_elo, p_marche, p_ml)
 
     return {
         "poisson": {k: round(v, 4) for k, v in p_poisson.items()} if p_poisson else None,
@@ -80,5 +91,6 @@ def consensus_match(api, league: int, season: int, home_id: int, away_id: int,
         "elo": {k: round(v, 4) for k, v in p_elo.items()} if p_elo else None,
         "elo_info": elo_info,
         "marche": {k: round(v, 4) for k, v in p_marche.items()} if p_marche else None,
+        "ml": {k: round(v, 4) for k, v in p_ml.items()} if p_ml else None,
         "consensus": consensus,
     }

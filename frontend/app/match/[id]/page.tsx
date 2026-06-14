@@ -65,6 +65,7 @@ const SOURCE_META: Record<string, { label: string; icon: string }> = {
   poisson:   { label: "Poisson / Dixon-Coles", icon: "functions" },
   elo:       { label: "Elo (force globale)",   icon: "military_tech" },
   marche:    { label: "Marché (sans marge)",   icon: "storefront" },
+  ml:        { label: "ML (xG, gradient boosting)", icon: "smart_toy" },
 };
 
 function BarreProba({ p }: { p: { "1": number; "X": number; "2": number } }) {
@@ -91,9 +92,10 @@ function ConsensusCard({ mm }: { mm: MultiModeles }) {
   const convergence = accord <= 0.08 ? { txt: "Forte convergence", cls: "text-primary", icon: "check_circle" }
     : accord <= 0.15 ? { txt: "Convergence modérée", cls: "text-tertiary", icon: "remove" }
     : { txt: "Désaccord entre modèles", cls: "text-error", icon: "warning" };
-  const sources: Array<["poisson" | "elo" | "marche", typeof mm.poisson]> = [
-    ["poisson", mm.poisson], ["elo", mm.elo], ["marche", mm.marche],
+  const sources: Array<["poisson" | "elo" | "marche" | "ml", typeof mm.poisson]> = [
+    ["poisson", mm.poisson], ["elo", mm.elo], ["marche", mm.marche], ["ml", mm.ml ?? null],
   ];
+  const nbSources = sources.filter(([, p]) => p).length;
   return (
     <div className="glass-card rounded-xl p-lg flex flex-col gap-lg">
       <div className="flex items-center justify-between gap-md flex-wrap">
@@ -103,7 +105,7 @@ function ConsensusCard({ mm }: { mm: MultiModeles }) {
           </div>
           <div>
             <div className="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant">Consensus statistique</div>
-            <div className="font-headline-sm text-headline-sm text-on-surface">3 modèles indépendants</div>
+            <div className="font-headline-sm text-headline-sm text-on-surface">{nbSources} modèles indépendants</div>
           </div>
         </div>
         <span className={`flex items-center gap-xs font-label-sm text-label-sm ${convergence.cls}`}>

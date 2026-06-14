@@ -97,10 +97,18 @@ def conseil_consensus(consensus: dict[str, float] | None,
             "cote": cote, "value": value, "confiance": confiance, "raison": raison}
 
 
+# Poids fixe du ML quand il est présent. Le ML (xG) est corrélé à l'Elo
+# (il l'utilise comme feature), donc on l'insère avec un poids modéré et on
+# réduit proportionnellement les autres sources — ça préserve leurs ratios
+# déjà validés tout en intégrant le signal xG neuf.
+POIDS_ML = 0.22
+
+
 def fusionner_1x2(
     poisson: dict[str, float] | None,
     elo: dict[str, float] | None,
     marche: dict[str, float] | None,
+    ml: dict[str, float] | None = None,
 ) -> dict:
     """Combine les sources disponibles en un consensus 1X2 pondéré.
 
@@ -114,19 +122,30 @@ def fusionner_1x2(
         sources["elo"] = _normaliser(elo)
     if marche:
         sources["marche"] = _normaliser(marche)
+    if ml:
+        sources["ml"] = _normaliser(ml)
 
     if not sources:
         return {"probabilites": None, "poids_utilises": {},
                 "sources_disponibles": [], "accord": None}
 
+    # Poids des sources « classiques » (hors ML), selon les valeurs validées
     base = POIDS_AVEC_MARCHE if "marche" in sources else POIDS_SANS_MARCHE
-    # Ne garde que les poids des sources présentes, puis renormalise les poids
-    poids = {s: base.get(s, 0.0) for s in sources}
+    classiques = [s for s in sources if s != "ml"]
+    poids = {s: base.get(s, 0.0) for s in classiques}
     total_poids = sum(poids.values())
     if total_poids <= 0:
-        poids = {s: 1.0 / len(sources) for s in sources}
-        total_poids = 1.0
+        poids = {s: 1.0 / len(classiques) for s in classiques} if classiques else {}
+        total_poids = 1.0 if classiques else 0.0
     poids = {s: w / total_poids for s, w in poids.items()}
+
+    # Insère le ML : il prend POIDS_ML, les autres sont réduits d'autant.
+    if "ml" in sources:
+        if poids:
+            poids = {s: w * (1.0 - POIDS_ML) for s, w in poids.items()}
+            poids["ml"] = POIDS_ML
+        else:
+            poids = {"ml": 1.0}
 
     # Pool LOGARITHMIQUE : moyenne géométrique pondérée des probabilités.
     # consensus_k ∝ exp(Σ_s w_s · ln p_s,k). Préserve la netteté (contrairement

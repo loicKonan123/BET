@@ -129,6 +129,7 @@ export type MultiModeles = {
   elo: Proba1X2 | null;
   elo_info: { rating_dom: number; rating_ext: number; ecart: number; terrain_neutre: boolean } | null;
   marche: Proba1X2 | null;
+  ml?: Proba1X2 | null;
   consensus: {
     probabilites: Proba1X2 | null;
     poids_utilises: Record<string, number>;

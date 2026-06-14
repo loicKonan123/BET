@@ -32,6 +32,7 @@ from src.api_client import ApiFootball
 from src.blend import conseil_consensus
 from src.consensus import consensus_match
 from src.ligues_mise_o_jeu import IDS_SOCCER, LIGUES_SOCCER
+from src.ml_service import entrainer_club, modele_club_si_pret
 from src.odds_parser import recuperer_cotes
 from src.pipeline import (
     STATUTS_LIVE,
@@ -696,6 +697,27 @@ def backtest(league: int, season: int, limit: int = 0):
     api = ApiFootball()
     result = run_backtest(api, league, season, limit=limit or None)
     return JSONResponse(result)
+
+
+@app.get("/api/ml/train")
+def ml_train(league: int, saisons: str = ""):
+    """Entraîne le modèle ML (4e source : xG) pour une ligue.
+
+    saisons : liste séparée par des virgules, ex "2023,2024,2025".
+    COÛTEUX la 1re fois (1 appel API par match pour le xG), puis tout est en cache.
+    """
+    try:
+        api = ApiFootball()
+        sais = [int(s) for s in saisons.split(",") if s.strip()] or [2023, 2024, 2025]
+        modele = entrainer_club(api, league, sais)
+        return JSONResponse({
+            "league": league, "saisons": sais,
+            "pret": modele is not None,
+            "equipes": len(modele.etats) if modele else 0,
+        })
+    except Exception as e:
+        log.exception("ml_train: ÉCHEC league=%s : %s", league, e)
+        return JSONResponse({"erreur": str(e)}, status_code=500)
 
 
 # ===================== Équipes & Joueurs =====================

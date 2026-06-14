@@ -406,8 +406,13 @@ export default function PitchView({ compos }: { compos: CompoEquipe[] }) {
                   Remplaçants — {eq.equipe}
                 </p>
                 <div className="flex flex-col gap-0.5">
-                  {eq.remplacants.slice(0, 7).map((joueur, i) => (
-                    <div key={i} className="flex items-center gap-xs text-xs text-on-surface-variant">
+                  {eq.remplacants.map((joueur, i) => (
+                    <button
+                      key={i}
+                      onClick={() => joueur.id && handlePlayerClick(joueur.id)}
+                      disabled={!joueur.id}
+                      className="flex items-center gap-xs text-xs text-on-surface-variant text-left rounded px-1 py-0.5 enabled:hover:bg-surface-container-high enabled:hover:text-on-surface transition-colors disabled:cursor-default"
+                    >
                       {joueur.id ? (
                         <img
                           src={`${PHOTO_BASE}/${joueur.id}.png`}
@@ -419,7 +424,7 @@ export default function PitchView({ compos }: { compos: CompoEquipe[] }) {
                         <span className="font-mono text-[10px] w-5 text-center opacity-60">#{joueur.numero}</span>
                       )}
                       <span className="truncate">{joueur.nom}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </div>

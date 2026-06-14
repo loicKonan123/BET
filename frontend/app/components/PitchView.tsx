@@ -12,6 +12,47 @@ function parseGrid(grid?: string): { row: number; col: number } {
   return { row: r || 1, col: c || 1 };
 }
 
+/** Découpe une formation "4-3-3" / "4-2-3-1" en nombres de joueurs par ligne. */
+function parseFormation(formation?: string): number[] {
+  if (!formation) return [4, 4, 2]; // défaut raisonnable
+  const lignes = formation.split("-").map((n) => parseInt(n, 10)).filter((n) => n > 0);
+  return lignes.length ? lignes : [4, 4, 2];
+}
+
+/** Regroupe les titulaires par ligne.
+ *  - Si l'API fournit les grilles (grid "row:col"), on s'en sert.
+ *  - Sinon (certaines ligues ne les donnent pas) on reconstruit les lignes à
+ *    partir de la formation : 1er joueur = gardien, puis défense/milieu/attaque.
+ */
+function construireLignes(equipe: CompoEquipe): Map<number, Joueur[]> {
+  const joueurs = equipe.titulaires;
+  const lignes = new Map<number, Joueur[]>();
+
+  const ontGrid = joueurs.some((j) => j.grid && j.grid.includes(":"));
+  if (ontGrid) {
+    for (const j of joueurs) {
+      const { row } = parseGrid(j.grid);
+      if (!lignes.has(row)) lignes.set(row, []);
+      lignes.get(row)!.push(j);
+    }
+    return lignes;
+  }
+
+  // Repli formation : GK (row 1) puis chaque ligne de la formation
+  const counts = parseFormation(equipe.formation);
+  lignes.set(1, joueurs.slice(0, 1)); // gardien
+  let idx = 1;
+  counts.forEach((count, li) => {
+    lignes.set(li + 2, joueurs.slice(idx, idx + count));
+    idx += count;
+  });
+  // Joueurs restants (formation incohérente) -> dernière ligne
+  if (idx < joueurs.length) {
+    lignes.set(counts.length + 2, joueurs.slice(idx));
+  }
+  return lignes;
+}
+
 function PlayerToken({
   joueur,
   x,
@@ -118,17 +159,11 @@ function TeamHalf({
   teamIndex: number;
   onPlayerClick: (id: number) => void;
 }) {
-  const joueurs = equipe.titulaires;
   const pitchW = xEnd - xStart;
   const pitchH = pitchYBot - pitchYTop;
 
-  // Groupe par row (row 1 = GK)
-  const lignes = new Map<number, Joueur[]>();
-  for (const j of joueurs) {
-    const { row } = parseGrid(j.grid);
-    if (!lignes.has(row)) lignes.set(row, []);
-    lignes.get(row)!.push(j);
-  }
+  // Groupe par ligne (grilles API si dispo, sinon repli formation)
+  const lignes = construireLignes(equipe);
 
   const rows = Array.from(lignes.keys()).sort((a, b) => a - b);
   const nbRows = rows.length;

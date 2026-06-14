@@ -18,10 +18,15 @@ qualitatif majeur (blessure clé, enjeu, météo).
 """
 from math import exp, log
 
+# Poids optimisés empiriquement (minimisation du log-loss sur 1669 matchs
+# walk-forward, toutes ligues club en cache). L'Elo s'est révélé plus fiable
+# que le Poisson sur l'ensemble (Elo seul 1.031 vs Poisson seul 1.122) ; on
+# garde toutefois une part au Poisson, mieux nourri en production (~2 saisons
+# ajustées vs demi-saison au backtest). Voir docs/plan.md.
 # Poids par défaut quand le marché est disponible
-POIDS_AVEC_MARCHE = {"marche": 0.50, "elo": 0.27, "poisson": 0.23}
+POIDS_AVEC_MARCHE = {"marche": 0.50, "elo": 0.30, "poisson": 0.20}
 # Poids quand le marché manque (matchs lointains, ligues mineures)
-POIDS_SANS_MARCHE = {"elo": 0.55, "poisson": 0.45}
+POIDS_SANS_MARCHE = {"elo": 0.70, "poisson": 0.30}
 
 CLES_1X2 = ("1", "X", "2")
 

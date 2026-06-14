@@ -29,7 +29,7 @@ On ne mise pas dans l'app : on analyse, on conseille, on suit la précision des 
 - ✅ **Courbe de calibration** (proba prédite vs réussite réelle) affichée sur `/backtest`
 - ✅ Référence : log-loss < 0.99 = on bat le marché (atteint : 0.85 sur EPL 2023)
 - ✅ **Backtest walk-forward du CONSENSUS** (`evaluer_consensus`) — entraîne Dixon-Coles MLE + amorce l'Elo sur la 1re moitié de saison, teste sur la 2e moitié JAMAIS vue (aucune fuite). Compare côte à côte 4 estimateurs : moyennes brutes / Poisson ajusté / Elo / consensus. Tableau comparatif affiché sur `/backtest` (le mieux calibré surligné)
-- 🔎 **Constat backtest** : le Poisson ajusté MLE est le mieux calibré en moyenne ; le consensus bat tous les modèles individuels sur certaines ligues (La Liga) mais les **poids fixes (55% Elo sans marché) sont sous-optimaux** quand le Poisson domine (EPL) → motive l'optimisation des poids + calibration
+- ✅ **Poids du consensus optimisés** — balayage sur 1669 matchs walk-forward (toutes ligues club en cache) minimisant le log-loss. L'Elo s'est révélé plus fiable sur l'ensemble (Elo seul 1.031 vs Poisson seul 1.122). Nouveaux poids : sans marché **Elo 0.70 / Poisson 0.30** (log-loss 1.018 vs 1.029 avant) ; avec marché **Marché 0.50 / Elo 0.30 / Poisson 0.20**. Compromis volontaire vers le Poisson (mieux nourri en prod : ~2 saisons ajustées vs demi-saison au backtest)
 
 ### Application web (Next.js + FastAPI)
 - ✅ Design **Apex Velocity** — glassmorphism, thème clair/sombre

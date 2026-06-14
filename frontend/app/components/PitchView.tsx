@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, ReactElement } from "react";
+import { useState, useEffect, ReactElement } from "react";
 import { useRouter } from "next/navigation";
 import { CompoEquipe, Joueur } from "../lib/api";
 
@@ -200,14 +200,15 @@ function TeamHalf({
   return <>{tokens}</>;
 }
 
-export default function PitchView({ compos }: { compos: CompoEquipe[] }) {
-  const router = useRouter();
-  if (!compos || compos.length === 0) return null;
-
-  const home = compos[0];
-  const away = compos[1];
-  const handlePlayerClick = (id: number) => router.push(`/player/${id}`);
-
+function PitchField({
+  home,
+  away,
+  onPlayerClick,
+}: {
+  home: CompoEquipe;
+  away: CompoEquipe;
+  onPlayerClick: (id: number) => void;
+}) {
   // Dimensions SVG — terrain horizontal
   const W = 720;
   const H = 420;
@@ -223,28 +224,6 @@ export default function PitchView({ compos }: { compos: CompoEquipe[] }) {
   const pitchY2 = H - MY;
 
   return (
-    <div className="w-full overflow-x-auto">
-      <div style={{ maxWidth: 740, margin: "0 auto" }}>
-        {/* En-têtes équipes */}
-        <div className="flex justify-between items-center mb-sm px-sm">
-          <div className="flex items-center gap-sm">
-            {home.logo && <img src={home.logo} alt="" className="w-6 h-6 object-contain" />}
-            <span className="text-sm font-bold text-on-surface">{home.equipe}</span>
-            <span className="text-xs text-on-surface-variant bg-surface-container-high px-sm py-0.5 rounded-full">
-              {home.formation}
-            </span>
-          </div>
-          <span className="text-xs text-on-surface-variant opacity-50 font-mono">VS</span>
-          <div className="flex items-center gap-sm flex-row-reverse">
-            {away.logo && <img src={away.logo} alt="" className="w-6 h-6 object-contain" />}
-            <span className="text-sm font-bold text-on-surface">{away.equipe}</span>
-            <span className="text-xs text-on-surface-variant bg-surface-container-high px-sm py-0.5 rounded-full">
-              {away.formation}
-            </span>
-          </div>
-        </div>
-
-        {/* Terrain SVG horizontal */}
         <svg
           viewBox={`0 0 ${W} ${H}`}
           style={{ width: "100%", borderRadius: 12, display: "block" }}
@@ -348,7 +327,7 @@ export default function PitchView({ compos }: { compos: CompoEquipe[] }) {
             pitchYBot={pitchY2 - 20}
             attackRight={true}
             teamIndex={0}
-            onPlayerClick={handlePlayerClick}
+            onPlayerClick={onPlayerClick}
           />
 
           {/* Joueurs away (moitié droite) */}
@@ -361,9 +340,62 @@ export default function PitchView({ compos }: { compos: CompoEquipe[] }) {
             pitchYBot={pitchY2 - 20}
             attackRight={false}
             teamIndex={1}
-            onPlayerClick={handlePlayerClick}
+            onPlayerClick={onPlayerClick}
           />
         </svg>
+  );
+}
+
+export default function PitchView({ compos }: { compos: CompoEquipe[] }) {
+  const router = useRouter();
+  const [zoom, setZoom] = useState(false);
+
+  // Fermer la modale au clavier (Échap)
+  useEffect(() => {
+    if (!zoom) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setZoom(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoom]);
+
+  if (!compos || compos.length === 0) return null;
+
+  const home = compos[0];
+  const away = compos[1];
+  const handlePlayerClick = (id: number) => router.push(`/player/${id}`);
+
+  return (
+    <div className="w-full overflow-x-auto">
+      <div style={{ maxWidth: 740, margin: "0 auto" }}>
+        {/* En-têtes équipes */}
+        <div className="flex justify-between items-center mb-sm px-sm">
+          <div className="flex items-center gap-sm">
+            {home.logo && <img src={home.logo} alt="" className="w-6 h-6 object-contain" />}
+            <span className="text-sm font-bold text-on-surface">{home.equipe}</span>
+            <span className="text-xs text-on-surface-variant bg-surface-container-high px-sm py-0.5 rounded-full">
+              {home.formation}
+            </span>
+          </div>
+          <button
+            onClick={() => setZoom(true)}
+            className="flex items-center gap-xs text-xs text-on-surface-variant hover:text-primary transition-colors px-sm py-1 rounded-full hover:bg-surface-container-high"
+            title="Agrandir les compositions"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>zoom_in</span>
+          </button>
+          <div className="flex items-center gap-sm flex-row-reverse">
+            {away.logo && <img src={away.logo} alt="" className="w-6 h-6 object-contain" />}
+            <span className="text-sm font-bold text-on-surface">{away.equipe}</span>
+            <span className="text-xs text-on-surface-variant bg-surface-container-high px-sm py-0.5 rounded-full">
+              {away.formation}
+            </span>
+          </div>
+        </div>
+
+        {/* Terrain (cliquable pour agrandir) */}
+        <div onClick={() => setZoom(true)} style={{ cursor: "zoom-in" }}>
+          <PitchField home={home} away={away} onPlayerClick={handlePlayerClick} />
+        </div>
 
         {/* Remplaçants */}
         {(home.remplacants?.length > 0 || away.remplacants?.length > 0) && (
@@ -395,6 +427,35 @@ export default function PitchView({ compos }: { compos: CompoEquipe[] }) {
           </div>
         )}
       </div>
+
+      {/* Modale plein écran — zoom sur les compositions */}
+      {zoom && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex flex-col"
+          onClick={() => setZoom(false)}
+        >
+          <div className="flex items-center justify-between p-md flex-shrink-0">
+            <span className="text-sm font-bold text-white flex items-center gap-sm">
+              {home.equipe} <span className="opacity-50">vs</span> {away.equipe}
+            </span>
+            <button
+              onClick={() => setZoom(false)}
+              className="flex items-center gap-xs text-white/80 hover:text-white text-sm px-sm py-1 rounded-full hover:bg-white/10"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 22 }}>close</span>
+            </button>
+          </div>
+          {/* Conteneur scrollable : le terrain est rendu large -> pan horizontal */}
+          <div className="flex-1 overflow-auto flex items-center justify-center p-sm">
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{ width: "min(1400px, 200vw)", flexShrink: 0 }}
+            >
+              <PitchField home={home} away={away} onPlayerClick={handlePlayerClick} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

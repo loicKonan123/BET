@@ -586,9 +586,13 @@ def match_ia(fixture_id: int, stats_season: int | None = None, force: int = 0):
     try:
         if not force:
             cache = store.get_analyse_ia(fixture_id)
-            if cache:
+            # On ne sert le cache que s'il est au FORMAT À JOUR (verdict d'équipe).
+            # Les analyses à l'ancien format sont régénérées automatiquement.
+            if cache and "probabilites_finales" in cache:
                 log.info("ia: fixture=%s servie depuis le cache", fixture_id)
                 return JSONResponse(cache)
+            if cache:
+                log.info("ia: fixture=%s cache obsolète (ancien format) -> régénération", fixture_id)
 
         log.info("ia: fixture=%s analyse DeepSeek (force=%s)…", fixture_id, force)
         api = ApiFootball()

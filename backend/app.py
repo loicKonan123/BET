@@ -578,10 +578,14 @@ def match_detail(fixture_id: int, stats_season: int | None = None):
 
 
 @app.get("/api/match/{fixture_id}/ia")
-def match_ia(fixture_id: int, stats_season: int | None = None, force: int = 0):
+def match_ia(fixture_id: int, stats_season: int | None = None,
+             force: int = 0, cache_only: int = 0):
     """Analyse fine par le cerveau LLM (DeepSeek) — à la demande, avec cache.
 
-    force=1 force une nouvelle analyse (ignore le cache).
+    force=1      force une nouvelle analyse (ignore le cache).
+    cache_only=1 ne renvoie QUE le cache à jour (jamais d'appel DeepSeek) ;
+                 répond {"cache_absent": true} si rien d'exploitable. Sert à
+                 l'affichage auto à l'ouverture du match, sans coût.
     """
     try:
         if not force:
@@ -591,8 +595,14 @@ def match_ia(fixture_id: int, stats_season: int | None = None, force: int = 0):
             if cache and "probabilites_finales" in cache:
                 log.info("ia: fixture=%s servie depuis le cache", fixture_id)
                 return JSONResponse(cache)
+            if cache_only:
+                # Pas de cache exploitable et on interdit l'appel DeepSeek.
+                return JSONResponse({"cache_absent": True})
             if cache:
                 log.info("ia: fixture=%s cache obsolète (ancien format) -> régénération", fixture_id)
+
+        if cache_only:
+            return JSONResponse({"cache_absent": True})
 
         log.info("ia: fixture=%s analyse DeepSeek (force=%s)…", fixture_id, force)
         api = ApiFootball()

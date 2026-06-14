@@ -180,8 +180,16 @@ export type AnalyseIA = {
   erreur?: string;
 };
 
-export async function getAnalyseIA(fixtureId: number, force = false): Promise<AnalyseIA> {
-  const r = await fetch(`${API_URL}/api/match/${fixtureId}/ia${force ? "?force=1" : ""}`);
+export async function getAnalyseIA(
+  fixtureId: number,
+  force = false,
+  cacheOnly = false,
+): Promise<AnalyseIA & { cache_absent?: boolean }> {
+  const params = new URLSearchParams();
+  if (force) params.set("force", "1");
+  if (cacheOnly) params.set("cache_only", "1");
+  const qs = params.toString();
+  const r = await fetch(`${API_URL}/api/match/${fixtureId}/ia${qs ? `?${qs}` : ""}`);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }

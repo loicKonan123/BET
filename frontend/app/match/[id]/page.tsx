@@ -269,12 +269,23 @@ export default function MatchPage() {
       .finally(() => setLoading(false));
   }, [id]);
 
+  // À l'ouverture du match : on affiche l'analyse IA SI elle est déjà en cache
+  // (aucun appel DeepSeek). Sinon le bouton reste pour la lancer à la demande.
+  useEffect(() => {
+    if (!id) return;
+    getAnalyseIA(id, false, true)
+      .then((d) => {
+        if (!d.cache_absent && !d.erreur) setIa(d);
+      })
+      .catch(() => { /* silencieux : le bouton prend le relais */ });
+  }, [id]);
+
   async function demanderIA(force = false) {
     setIaLoading(true); setIaErreur(null);
     try {
       const d = await getAnalyseIA(id, force);
       if (d.erreur) setIaErreur(d.erreur);
-      else setIa(d);
+      else if (!d.cache_absent) setIa(d);
     } catch (e) {
       setIaErreur(e instanceof Error ? e.message : "Erreur réseau");
     } finally {

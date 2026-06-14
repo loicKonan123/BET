@@ -9,17 +9,27 @@ on le sépare de la prédiction :
     simplement omise (dégradation propre).
 """
 import logging
+import pickle
+import time
+from pathlib import Path
 
-from .api_client import ApiFootball
+from .api_client import BACKEND_DIR, ApiFootball
 from .ml import ModeleML, entrainer, extraire_xg
 
 log = logging.getLogger("edge.ml")
 
 TTL_SECONDES = 24 * 3600.0
 
-# scope -> ModeleML | None  (+ horodatage de fraîcheur)
-import time
+# Persistance disque des modèles entraînés (survit aux redémarrages)
+MODELS_DIR = BACKEND_DIR / "data" / "ml_models"
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
+# scope -> ModeleML | None  (+ horodatage de fraîcheur) — cache mémoire
 _CACHE: dict[str, tuple[float, ModeleML | None]] = {}
+
+
+def _chemin(league_id: int) -> Path:
+    return MODELS_DIR / f"club_{league_id}.pkl"
 
 
 def _fixtures(api: ApiFootball, league_id: int, saisons: list[int]) -> list:
@@ -58,13 +68,31 @@ def entrainer_club(api: ApiFootball, league_id: int, saisons: list[int]) -> Mode
     xg = _collecter_xg(api, fixtures)
     modele = entrainer(fixtures, xg)
     _CACHE[scope] = (time.time(), modele)
+    if modele is not None:
+        try:
+            _chemin(league_id).write_bytes(pickle.dumps(modele))
+        except Exception as e:
+            log.warning("ml: sauvegarde disque échouée ligue=%s : %s", league_id, e)
     log.info("ml: ligue=%s -> %s", league_id, "modèle prêt" if modele else "données insuffisantes")
     return modele
 
 
 def modele_club_si_pret(league_id: int) -> ModeleML | None:
-    """Renvoie le modèle en cache mémoire s'il est frais, sinon None (pas de fetch)."""
+    """Renvoie le modèle entraîné (mémoire, sinon disque). Jamais d'appel API.
+
+    Ne déclenche pas d'entraînement : si aucun modèle n'existe, renvoie None et
+    le consensus ignore simplement la source ML.
+    """
     entry = _CACHE.get(f"club:{league_id}")
-    if entry and (time.time() - entry[0]) < TTL_SECONDES:
+    if entry:
         return entry[1]
+    # Pas en mémoire : tente le chargement depuis le disque
+    chemin = _chemin(league_id)
+    if chemin.exists():
+        try:
+            modele = pickle.loads(chemin.read_bytes())
+            _CACHE[f"club:{league_id}"] = (time.time(), modele)
+            return modele
+        except Exception as e:
+            log.warning("ml: chargement disque échoué ligue=%s : %s", league_id, e)
     return None

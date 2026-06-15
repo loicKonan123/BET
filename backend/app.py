@@ -896,6 +896,8 @@ def scores_du_jour(date_str: str = ""):
                 "ligue_id": f["league"]["id"],
                 "ligue": f["league"]["name"],
                 "ligue_logo": f["league"].get("logo"),
+                "pays": f["league"].get("country"),
+                "pays_flag": f["league"].get("flag"),
                 "home": {
                     "id": f["teams"]["home"]["id"],
                     "name": f["teams"]["home"]["name"],

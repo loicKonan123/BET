@@ -427,6 +427,8 @@ export type ScoreMatch = {
   ligue_id: number;
   ligue: string;
   ligue_logo?: string;
+  pays?: string | null;
+  pays_flag?: string | null;
   home: { id: number; name: string; logo?: string };
   away: { id: number; name: string; logo?: string };
   score: { home: number | null; away: number | null };

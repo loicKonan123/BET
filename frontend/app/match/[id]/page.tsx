@@ -68,81 +68,116 @@ const SOURCE_META: Record<string, { label: string; icon: string }> = {
   ml:        { label: "ML (xG, gradient boosting)", icon: "smart_toy" },
 };
 
-function BarreProba({ p }: { p: { "1": number; "X": number; "2": number } }) {
+// Barre 1X2 segmentée. Les 3 issues sont toujours dans l'ordre Dom / Nul / Ext,
+// reliées aux couleurs par la légende affichée en haut de la carte.
+function BarreProba({ p, fort }: { p: { "1": number; "X": number; "2": number }; fort?: boolean }) {
+  const h = fort ? "h-3" : "h-2";
   return (
-    <>
-      <div className="flex h-2 rounded-full overflow-hidden bg-surface-container-highest">
-        <div className="bg-primary" style={{ width: `${Math.round(p["1"] * 100)}%` }} />
-        <div className="bg-outline" style={{ width: `${Math.round(p["X"] * 100)}%` }} />
-        <div className="bg-secondary" style={{ width: `${Math.round(p["2"] * 100)}%` }} />
-      </div>
-      <div className="flex justify-between mt-xs font-label-sm text-label-sm">
-        <span className="text-primary">{Math.round(p["1"] * 100)}%</span>
-        <span className="text-on-surface-variant">{Math.round(p["X"] * 100)}%</span>
-        <span className="text-secondary">{Math.round(p["2"] * 100)}%</span>
-      </div>
-    </>
+    <div className={`flex ${h} rounded-full overflow-hidden bg-surface-container-highest`}>
+      <div className="bg-primary" style={{ width: `${Math.round(p["1"] * 100)}%` }} />
+      <div className="bg-outline" style={{ width: `${Math.round(p["X"] * 100)}%` }} />
+      <div className="bg-secondary" style={{ width: `${Math.round(p["2"] * 100)}%` }} />
+    </div>
   );
 }
 
-function ConsensusCard({ mm }: { mm: MultiModeles }) {
+function ConsensusCard({ mm, home, away }: { mm: MultiModeles; home: string; away: string }) {
   const cons = mm.consensus.probabilites!;
   const accord = mm.consensus.accord ?? 0;
-  // accord faible = convergence ; > 0.15 = désaccord notable
-  const convergence = accord <= 0.08 ? { txt: "Forte convergence", cls: "text-primary", icon: "check_circle" }
-    : accord <= 0.15 ? { txt: "Convergence modérée", cls: "text-tertiary", icon: "remove" }
-    : { txt: "Désaccord entre modèles", cls: "text-error", icon: "warning" };
+  const convergence = accord <= 0.08 ? { txt: "Les modèles sont d'accord", cls: "text-primary", icon: "check_circle" }
+    : accord <= 0.15 ? { txt: "Accord modéré", cls: "text-tertiary", icon: "remove" }
+    : { txt: "Les modèles divergent", cls: "text-tertiary", icon: "info" };
   const sources: Array<["poisson" | "elo" | "marche" | "ml", typeof mm.poisson]> = [
     ["poisson", mm.poisson], ["elo", mm.elo], ["marche", mm.marche], ["ml", mm.ml ?? null],
   ];
   const nbSources = sources.filter(([, p]) => p).length;
+
+  // Verdict en clair : l'issue la plus probable du consensus
+  const issues = [
+    { cle: "1" as const, label: `Victoire ${home}`, pct: cons["1"] },
+    { cle: "X" as const, label: "Match nul", pct: cons["X"] },
+    { cle: "2" as const, label: `Victoire ${away}`, pct: cons["2"] },
+  ];
+  const verdict = issues.reduce((a, b) => (b.pct > a.pct ? b : a));
+
+  // Petites valeurs Dom/Nul/Ext sous une barre
+  const Valeurs = ({ p }: { p: { "1": number; "X": number; "2": number } }) => (
+    <div className="flex justify-between mt-1 text-[11px] font-mono">
+      <span className="text-primary">{Math.round(p["1"] * 100)}%</span>
+      <span className="text-on-surface-variant">{Math.round(p["X"] * 100)}%</span>
+      <span className="text-secondary">{Math.round(p["2"] * 100)}%</span>
+    </div>
+  );
+
   return (
-    <div className="glass-card rounded-xl p-lg flex flex-col gap-lg">
+    <div className="glass-card p-lg flex flex-col gap-lg">
+      {/* En-tête */}
       <div className="flex items-center justify-between gap-md flex-wrap">
         <div className="flex items-center gap-sm">
-          <div className="w-10 h-10 rounded-lg bg-primary-container/30 flex items-center justify-center">
-            <Icon name="hub" className="text-primary" />
-          </div>
-          <div>
-            <div className="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant">Consensus statistique</div>
-            <div className="font-headline-sm text-headline-sm text-on-surface">{nbSources} modèles indépendants</div>
-          </div>
+          <Icon name="hub" className="text-primary" style={{ fontSize: 20 }} />
+          <span className="text-xs uppercase tracking-[0.15em] font-semibold text-on-surface-variant">
+            Consensus de {nbSources} modèles
+          </span>
         </div>
-        <span className={`flex items-center gap-xs font-label-sm text-label-sm ${convergence.cls}`}>
-          <Icon name={convergence.icon} style={{ fontSize: 16 }} />{convergence.txt}
+        <span className={`flex items-center gap-xs text-[11px] font-medium ${convergence.cls}`}>
+          <Icon name={convergence.icon} style={{ fontSize: 15 }} />{convergence.txt}
         </span>
       </div>
 
-      {/* Consensus pondéré — vedette */}
-      <div className="bg-primary-container/10 border border-primary/20 rounded-xl p-md">
-        <div className="font-label-sm text-label-sm uppercase tracking-widest text-primary mb-sm">Probabilité consensus</div>
-        <BarreProba p={cons} />
+      {/* Verdict en clair */}
+      <div>
+        <div className="flex items-baseline justify-between mb-sm">
+          <span className="font-headline-sm text-headline-sm text-on-surface">{verdict.label}</span>
+          <span className="font-mono font-black text-headline-md text-primary">{Math.round(verdict.pct * 100)}%</span>
+        </div>
+        <BarreProba p={cons} fort />
+        {/* Légende : relie couleurs et issues */}
+        <div className="flex justify-between mt-sm text-xs">
+          <span className="flex items-center gap-1.5 text-on-surface-variant min-w-0">
+            <span className="w-2.5 h-2.5 rounded-full bg-primary flex-shrink-0" />
+            <span className="truncate">{home}</span>
+            <span className="font-mono text-on-surface">{Math.round(cons["1"] * 100)}%</span>
+          </span>
+          <span className="flex items-center gap-1.5 text-on-surface-variant">
+            <span className="w-2.5 h-2.5 rounded-full bg-outline flex-shrink-0" />
+            Nul <span className="font-mono text-on-surface">{Math.round(cons["X"] * 100)}%</span>
+          </span>
+          <span className="flex items-center gap-1.5 text-on-surface-variant min-w-0 justify-end">
+            <span className="font-mono text-on-surface">{Math.round(cons["2"] * 100)}%</span>
+            <span className="truncate">{away}</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-secondary flex-shrink-0" />
+          </span>
+        </div>
       </div>
 
-      {/* Détail par source */}
-      <div className="flex flex-col gap-md">
+      {/* Détail par modèle */}
+      <div className="flex flex-col gap-md pt-md border-t border-white/10">
+        <span className="text-[11px] uppercase tracking-wider text-on-surface-variant/60">
+          Avis de chaque modèle
+        </span>
         {sources.map(([key, p]) => p && (
           <div key={key}>
-            <div className="flex items-center justify-between mb-xs">
-              <span className="flex items-center gap-xs font-label-md text-label-md text-on-surface-variant">
+            <div className="flex items-center justify-between mb-1">
+              <span className="flex items-center gap-xs text-sm text-on-surface-variant">
                 <Icon name={SOURCE_META[key].icon} style={{ fontSize: 15 }} />
                 {SOURCE_META[key].label}
               </span>
               {mm.consensus.poids_utilises[key] != null && (
-                <span className="font-label-sm text-label-sm text-on-surface-variant/60">
-                  poids {Math.round(mm.consensus.poids_utilises[key] * 100)}%
+                <span className="text-[11px] text-on-surface-variant/60">
+                  pèse {Math.round(mm.consensus.poids_utilises[key] * 100)}%
                 </span>
               )}
             </div>
             <BarreProba p={p} />
+            <Valeurs p={p} />
           </div>
         ))}
       </div>
 
       {mm.elo_info && (
-        <div className="flex items-center gap-sm font-label-sm text-label-sm text-on-surface-variant/70 pt-sm border-t border-white/10">
+        <div className="flex items-center gap-sm text-[11px] text-on-surface-variant/60 pt-sm border-t border-white/10">
           <Icon name="military_tech" style={{ fontSize: 14 }} />
-          Elo : {mm.elo_info.rating_dom} vs {mm.elo_info.rating_ext} (écart {mm.elo_info.ecart > 0 ? "+" : ""}{mm.elo_info.ecart})
+          Force Elo : {home} {mm.elo_info.rating_dom} vs {away} {mm.elo_info.rating_ext}
           {mm.elo_info.terrain_neutre && " · terrain neutre"}
         </div>
       )}
@@ -534,7 +569,7 @@ export default function MatchPage() {
 
               {/* Consensus multi-modèles */}
               {m.multi_modeles?.consensus?.probabilites && (
-                <ConsensusCard mm={m.multi_modeles} />
+                <ConsensusCard mm={m.multi_modeles} home={m.home.name} away={m.away.name} />
               )}
 
               {/* Analyse IA */}

@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 from .api_client import BACKEND_DIR, ApiFootball
-from .ml import ModeleML, entrainer, extraire_xg
+from .ml import ModeleML, entrainer, evaluer_ml, extraire_xg
 
 log = logging.getLogger("edge.ml")
 
@@ -75,6 +75,26 @@ def entrainer_club(api: ApiFootball, league_id: int, saisons: list[int]) -> Mode
             log.warning("ml: sauvegarde disque échouée ligue=%s : %s", league_id, e)
     log.info("ml: ligue=%s -> %s", league_id, "modèle prêt" if modele else "données insuffisantes")
     return modele
+
+
+_CACHE_ETUDE: dict[int, tuple[float, dict | None]] = {}
+
+
+def etude_club(api: ApiFootball, league_id: int, saisons: list[int],
+               forcer: bool = False) -> dict | None:
+    """Étude walk-forward du modèle ML d'une ligue (ML vs Elo + importance).
+
+    Réutilise les stats déjà en cache : aucun nouvel appel API si la ligue a
+    déjà été entraînée. Résultat caché en mémoire (TTL).
+    """
+    entry = _CACHE_ETUDE.get(league_id)
+    if not forcer and entry and (time.time() - entry[0]) < TTL_SECONDES:
+        return entry[1]
+    fixtures = _fixtures(api, league_id, saisons)
+    xg = _collecter_xg(api, fixtures)
+    etude = evaluer_ml(fixtures, xg)
+    _CACHE_ETUDE[league_id] = (time.time(), etude)
+    return etude
 
 
 def modele_club_si_pret(league_id: int) -> ModeleML | None:

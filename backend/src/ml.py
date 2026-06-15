@@ -133,6 +133,95 @@ class ModeleML:
         return {"1": float(p[0]), "X": float(p[1]), "2": float(p[2])}
 
 
+def _metriques(P, y) -> dict:
+    """Log-loss, Brier, accuracy et courbe de calibration pour des probas (n,3)."""
+    from math import log
+    n = len(y)
+    ll = sum(-log(max(P[i][y[i]], 1e-12)) for i in range(n)) / n
+    br = sum(sum((P[i][k] - (1.0 if k == y[i] else 0.0)) ** 2 for k in range(3))
+             for i in range(n)) / n
+    ok = sum(1 for i in range(n) if max(range(3), key=lambda k: P[i][k]) == y[i])
+    # Calibration : bins sur la proba du favori
+    bins = {b: {"n": 0, "ok": 0, "somme": 0.0} for b in range(10)}
+    for i in range(n):
+        pred = max(range(3), key=lambda k: P[i][k])
+        pf = P[i][pred]
+        b = min(int(pf * 10), 9)
+        bins[b]["n"] += 1
+        bins[b]["somme"] += pf
+        bins[b]["ok"] += int(pred == y[i])
+    calibration = [
+        {"bin": f"{b*10}-{b*10+10}%",
+         "proba_moyenne": round(bins[b]["somme"] / bins[b]["n"] * 100, 1),
+         "reussite_reelle": round(bins[b]["ok"] / bins[b]["n"] * 100, 1),
+         "n": bins[b]["n"]}
+        for b in range(10) if bins[b]["n"] > 0
+    ]
+    return {"n": n, "log_loss": round(ll, 4), "brier_score": round(br, 4),
+            "accuracy_1x2": round(ok / n * 100, 1), "calibration": calibration}
+
+
+def evaluer_ml(fixtures: list, xg_par_fixture: dict[int, dict],
+               frac_train: float = 0.7, min_lignes: int = 150) -> dict | None:
+    """Étude walk-forward du modèle ML : ML vs Elo + importance des features.
+
+    Entraîne sur les `frac_train` premiers matchs (chronologiquement), évalue sur
+    le reste (jamais vu). Compare au baseline Elo et calcule l'importance de
+    chaque feature (permutation). Sert à la page « Étude du modèle ».
+    """
+    import numpy as np
+    from sklearn.calibration import CalibratedClassifierCV
+    from sklearn.ensemble import HistGradientBoostingClassifier
+    from sklearn.inspection import permutation_importance
+
+    from .elo import proba_1x2_elo
+
+    _etats, X, y, dates = _rejouer(fixtures, xg_par_fixture)
+    if len(y) < min_lignes or len(set(y)) < 3:
+        return None
+
+    X = np.array(X)
+    y = np.array(y)
+    ordre = np.argsort(dates)
+    X, y = X[ordre], y[ordre]
+    cut = int(len(y) * frac_train)
+    Xtr, Xte, ytr, yte = X[:cut], X[cut:], y[:cut], y[cut:]
+    if len(yte) < 30 or len(set(ytr)) < 3:
+        return None
+
+    clf = CalibratedClassifierCV(
+        HistGradientBoostingClassifier(max_iter=300, learning_rate=0.05, max_depth=4,
+                                       l2_regularization=1.0, random_state=0),
+        method="isotonic", cv=3)
+    clf.fit(Xtr, ytr)
+    P_ml = clf.predict_proba(Xte)
+
+    # Baseline Elo (colonnes 1 = elo_home, 2 = elo_away)
+    P_elo = []
+    for i in range(len(yte)):
+        p = proba_1x2_elo(float(Xte[i][1]), float(Xte[i][2]))
+        P_elo.append([p["1"], p["X"], p["2"]])
+
+    # Importance des features (permutation, score = -log-loss)
+    try:
+        imp = permutation_importance(clf, Xte, yte, scoring="neg_log_loss",
+                                     n_repeats=5, random_state=0)
+        importance = sorted(
+            [{"feature": FEATURES[i], "poids": round(float(imp.importances_mean[i]), 4)}
+             for i in range(len(FEATURES))],
+            key=lambda d: -d["poids"])
+    except Exception:
+        importance = []
+
+    return {
+        "n_train": cut,
+        "n_test": len(yte),
+        "ml": _metriques(P_ml, yte),
+        "elo": _metriques(P_elo, yte),
+        "importance": importance,
+    }
+
+
 def entrainer(fixtures: list, xg_par_fixture: dict[int, dict],
               min_lignes: int = 200) -> ModeleML | None:
     """Entraîne le modèle ML (GBM calibré) sur l'historique d'une ligue."""

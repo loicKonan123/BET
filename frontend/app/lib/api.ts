@@ -439,6 +439,33 @@ export type ScoresJour = {
   matchs: ScoreMatch[];
 };
 
+// ---- Étude du modèle ML ----
+export type ModeleMetriques = {
+  n: number; log_loss: number; brier_score: number; accuracy_1x2: number;
+  calibration: CalibrationBin[];
+};
+
+export type EtudeML = {
+  league: number;
+  ligue: string;
+  entraine: boolean;
+  ligues_disponibles: { id: number; nom: string }[];
+  etude: {
+    n_train: number;
+    n_test: number;
+    ml: ModeleMetriques;
+    elo: ModeleMetriques;
+    importance: { feature: string; poids: number }[];
+  } | null;
+  erreur?: string;
+};
+
+export async function getEtudeML(league: number): Promise<EtudeML> {
+  const r = await fetch(`${API_URL}/api/ml/etude?league=${league}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
 export async function getScores(date: string): Promise<ScoresJour> {
   const r = await fetch(`${API_URL}/api/scores?date_str=${date}`);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);

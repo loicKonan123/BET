@@ -32,7 +32,7 @@ from src.api_client import ApiFootball
 from src.blend import conseil_consensus
 from src.consensus import consensus_match
 from src.ligues_mise_o_jeu import IDS_SOCCER, LIGUES_SOCCER
-from src.ml_service import entrainer_club, modele_club_si_pret
+from src.ml_service import entrainer_club, etude_club, modele_club_si_pret
 from src.odds_parser import recuperer_cotes
 from src.pipeline import (
     STATUTS_LIVE,
@@ -731,6 +731,36 @@ def ml_train(league: int, saisons: str = ""):
         })
     except Exception as e:
         log.exception("ml_train: ÉCHEC league=%s : %s", league, e)
+        return JSONResponse({"erreur": str(e)}, status_code=500)
+
+
+# Ligues dotées d'un modèle ML entraîné (pour la page Étude du modèle)
+ML_LIGUES = [
+    {"id": 39, "nom": "Premier League"},
+    {"id": 140, "nom": "La Liga"},
+    {"id": 135, "nom": "Serie A"},
+    {"id": 78, "nom": "Bundesliga"},
+    {"id": 61, "nom": "Ligue 1"},
+]
+
+
+@app.get("/api/ml/etude")
+def ml_etude(league: int, saisons: str = ""):
+    """Résultats de l'étude du modèle ML pour une ligue (ML vs Elo + importance)."""
+    try:
+        api = ApiFootball()
+        sais = [int(s) for s in saisons.split(",") if s.strip()] or [2023, 2024]
+        etude = etude_club(api, league, sais)
+        pret = modele_club_si_pret(league) is not None
+        return JSONResponse({
+            "league": league,
+            "ligue": _nom_ligue(league),
+            "entraine": pret,
+            "etude": etude,
+            "ligues_disponibles": ML_LIGUES,
+        })
+    except Exception as e:
+        log.exception("ml_etude: ÉCHEC league=%s : %s", league, e)
         return JSONResponse({"erreur": str(e)}, status_code=500)
 
 

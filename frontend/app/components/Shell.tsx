@@ -13,6 +13,7 @@ const NAV = [
   { href: "/generate", label: "Générer", icon: "bolt" },
   { href: "/analyses", label: "Analyses", icon: "insights" },
   { href: "/backtest", label: "Backtest", icon: "science" },
+  { href: "/modele", label: "Modèle", icon: "smart_toy" },
   { href: "/analytics", label: "Performance", icon: "analytics" },
   { href: "/history", label: "Historique", icon: "history" },
 ];

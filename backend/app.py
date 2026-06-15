@@ -334,6 +334,20 @@ def analyses(
         for fx in fixtures:
             r = analyser_fixture_sans_cotes(api, fx, stats_season=stats_season)
             if r:
+                # Consensus modèles (Poisson ajusté + Elo + ML) — sans marché donc
+                # sans appel API : DC, Elo et ML sont déjà en cache. Le marché
+                # (+IA) reste réservé à la page détail.
+                try:
+                    pois = r.get("probabilites", {})
+                    fallback = ({k: pois.get(k) for k in ("1", "X", "2")}
+                                if pois.get("1") is not None else None)
+                    mm = consensus_match(api, fx.league, fx.season,
+                                         fx.home_id, fx.away_id,
+                                         cotes_1x2=None, poisson_fallback=fallback)
+                    r["consensus"] = mm["consensus"].get("probabilites")
+                    r["sources_consensus"] = mm["consensus"].get("sources_disponibles")
+                except Exception as e:
+                    log.exception("analyses: consensus ÉCHEC fixture=%s : %s", fx.fixture_id, e)
                 out.append(r)
             else:
                 ignores += 1

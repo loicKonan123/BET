@@ -55,9 +55,12 @@ function Pastilles({ forme }: { forme: string }) {
 
 export default function AnalyseMatch({ a, href }: { a: Analyse; href?: string }) {
   const [dom, ext] = a.match.split(" - ");
-  const p1 = a.probabilites?.["1"] ?? 0;
-  const pX = a.probabilites?.["X"] ?? 0;
-  const p2 = a.probabilites?.["2"] ?? 0;
+  // Préfère le consensus (Poisson ajusté + Elo + ML) ; repli sur le Poisson seul.
+  const src = a.consensus ?? a.probabilites;
+  const p1 = src?.["1"] ?? 0;
+  const pX = src?.["X"] ?? 0;
+  const p2 = src?.["2"] ?? 0;
+  const nbSources = a.sources_consensus?.length ?? 0;
   const pct = (x: number) => `${Math.round(x * 100)}%`;
 
   const card = (
@@ -86,6 +89,11 @@ export default function AnalyseMatch({ a, href }: { a: Analyse; href?: string })
 
       {/* Barre 1X2 */}
       <div>
+        <div className="flex items-center justify-between mb-xs">
+          <span className="font-label-sm text-label-sm text-on-surface-variant/70">
+            {a.consensus ? `Consensus${nbSources ? ` · ${nbSources} modèles` : ""}` : "Poisson"}
+          </span>
+        </div>
         <div className="flex h-2 rounded-full overflow-hidden bg-surface-container-highest">
           <div className="bg-primary" style={{ width: pct(p1) }} />
           <div className="bg-outline" style={{ width: pct(pX) }} />

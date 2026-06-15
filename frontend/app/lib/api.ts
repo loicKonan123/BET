@@ -29,6 +29,8 @@ export type Analyse = {
   buts_attendus: { domicile: number; exterieur: number };
   forme: { domicile: string; exterieur: string };
   probabilites: Record<string, number>;
+  consensus?: { "1": number; X: number; "2": number } | null;
+  sources_consensus?: string[];
 };
 
 export type Resultat = {

@@ -718,6 +718,21 @@ def premium_generer(
         api = ApiFootball()
         fixtures, dates_ok = _scanner_fixtures(api, jours, valider, max_matchs)
 
+        # On ne garde que les matchs À VENIR, avec au moins 2h avant le coup
+        # d'envoi (le temps de placer le pari) — pas de match commencé/imminent.
+        limite = datetime.now(timezone.utc) + timedelta(hours=2)
+
+        def _a_venir(fx) -> bool:
+            if fx.status not in ("NS", "TBD"):
+                return False
+            try:
+                ko = datetime.fromisoformat((fx.date or "").replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                return False
+            return ko >= limite
+
+        fixtures = [fx for fx in fixtures if _a_venir(fx)]
+
         pool = []
         for fx in fixtures:
             try:

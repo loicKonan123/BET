@@ -60,6 +60,22 @@ def init_db() -> None:
             )
             """
         )
+        # Tickets premium (page dédiée cote 3/5/10) — table séparée, persistante
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tickets_premium (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                cree_le       TEXT NOT NULL,
+                cote_cible    REAL,
+                cote_totale   REAL NOT NULL,
+                proba_reussite REAL NOT NULL,
+                value         REAL NOT NULL,
+                mise          REAL NOT NULL DEFAULT 10,
+                statut        TEXT NOT NULL DEFAULT 'en_attente',
+                selections    TEXT NOT NULL
+            )
+            """
+        )
 
 
 def _row_to_dict(r: sqlite3.Row) -> dict:
@@ -118,6 +134,67 @@ def definir_statut(ticket_id: int, statut: str) -> dict | None:
 def supprimer_ticket(ticket_id: int) -> None:
     with _conn() as c:
         c.execute("DELETE FROM tickets WHERE id = ?", (ticket_id,))
+
+
+# ===================== Tickets PREMIUM (page dédiée cote 3/5/10) =====================
+
+def _row_premium(r: sqlite3.Row) -> dict:
+    return {
+        "id": r["id"],
+        "cree_le": r["cree_le"],
+        "cote_cible": r["cote_cible"],
+        "cote_totale": r["cote_totale"],
+        "proba_reussite": r["proba_reussite"],
+        "value": r["value"],
+        "mise": r["mise"],
+        "statut": r["statut"],
+        "selections": json.loads(r["selections"]),
+    }
+
+
+def lister_un_premium(ticket_id: int) -> dict | None:
+    with _conn() as c:
+        r = c.execute("SELECT * FROM tickets_premium WHERE id = ?", (ticket_id,)).fetchone()
+        return _row_premium(r) if r else None
+
+
+def sauver_ticket_premium(combine: dict, cote_cible: float, mise: float = 10.0) -> dict:
+    with _conn() as c:
+        cur = c.execute(
+            """INSERT INTO tickets_premium
+               (cree_le, cote_cible, cote_totale, proba_reussite, value, mise, statut, selections)
+               VALUES (?, ?, ?, ?, ?, ?, 'en_attente', ?)""",
+            (
+                datetime.now(timezone.utc).isoformat(),
+                float(cote_cible),
+                float(combine["cote_totale"]),
+                float(combine["proba_reussite"]),
+                float(combine.get("value", 0)),
+                float(mise),
+                json.dumps(combine.get("selections", []), ensure_ascii=False),
+            ),
+        )
+        rowid = cur.lastrowid
+    return lister_un_premium(rowid)
+
+
+def lister_tickets_premium() -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM tickets_premium ORDER BY id DESC").fetchall()
+        return [_row_premium(r) for r in rows]
+
+
+def definir_statut_premium(ticket_id: int, statut: str) -> dict | None:
+    if statut not in STATUTS:
+        raise ValueError(f"statut invalide : {statut}")
+    with _conn() as c:
+        c.execute("UPDATE tickets_premium SET statut = ? WHERE id = ?", (statut, ticket_id))
+    return lister_un_premium(ticket_id)
+
+
+def supprimer_ticket_premium(ticket_id: int) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM tickets_premium WHERE id = ?", (ticket_id,))
 
 
 def analytics() -> dict:

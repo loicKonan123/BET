@@ -10,6 +10,7 @@ export type Selection = {
   proba: number;
   fixture_id?: number;
   cle?: string;
+  match_date?: string;
 };
 
 export type Combine = {
@@ -248,6 +249,55 @@ export async function settlerTickets(): Promise<{ settled: number; skipped: numb
   const r = await fetch(`${API_URL}/api/tickets/settle`, { method: "POST" });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
+}
+
+// ---- PREMIUM : tickets cote cible (3/5/10), persistants ----
+export type TicketPremium = TicketEnregistre & { cote_cible: number };
+
+export type PremiumResult = {
+  genere_le: string;
+  cote_cible: number;
+  nb_matchs_pool: number;
+  nb_tickets: number;
+  tickets: TicketPremium[];
+  dates_scannees: string[];
+  erreur?: string;
+};
+
+export async function genererPremium(
+  coteCible: number,
+  nbTickets = 5,
+  jours = 3
+): Promise<PremiumResult> {
+  const r = await fetch(
+    `${API_URL}/api/premium/generer?cote_cible=${coteCible}&nb_tickets=${nbTickets}&jours=${jours}`
+  );
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+export async function listerPremium(): Promise<TicketPremium[]> {
+  const r = await fetch(`${API_URL}/api/premium/tickets`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+export async function definirResultatPremium(
+  id: number,
+  statut: "gagne" | "perdu" | "en_attente"
+): Promise<TicketPremium> {
+  const r = await fetch(`${API_URL}/api/premium/tickets/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ statut }),
+  });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+export async function supprimerPremium(id: number): Promise<void> {
+  const r = await fetch(`${API_URL}/api/premium/tickets/${id}`, { method: "DELETE" });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
 }
 
 export type Analytics = {

@@ -30,6 +30,7 @@ from src import store
 from src.analyste import analyser_avec_ia
 from src.api_client import ApiFootball
 from src.blend import conseil_consensus
+from src.combines import generer_combines
 from src.consensus import consensus_match
 from src.ligues_mise_o_jeu import IDS_SOCCER, LIGUES_SOCCER
 from src.ml_service import entrainer_club, etude_club, modele_club_si_pret
@@ -698,6 +699,102 @@ def settle():
         return _settle_tickets()
     except Exception as e:
         return JSONResponse({"erreur": str(e)}, status_code=500)
+
+
+# ===================== PREMIUM : tickets cote cible (3/5/10) =====================
+
+@app.get("/api/premium/generer")
+def premium_generer(
+    cote_cible: float = 3.0,
+    nb_tickets: int = 5,
+    jours: int = 3,
+    max_matchs: int = 40,
+    valider: int = 1,
+):
+    """Génère des combinés visant une COTE CIBLE (3/5/10) via le consensus,
+    puis les PERSISTE (table dédiée). Réutilise le moteur existant sans le toucher.
+    """
+    try:
+        api = ApiFootball()
+        fixtures, dates_ok = _scanner_fixtures(api, jours, valider, max_matchs)
+
+        pool = []
+        for fx in fixtures:
+            try:
+                cotes = recuperer_cotes(api, fx.fixture_id)
+            except Exception:
+                cotes = {}
+            cotes_1x2 = {k: cotes.get(k) for k in ("1", "X", "2") if cotes.get(k)}
+            mm = consensus_match(api, fx.league, fx.season, fx.home_id, fx.away_id,
+                                 cotes_1x2=cotes_1x2 or None)
+            cons = mm["consensus"].get("probabilites")
+            if not cons:
+                continue
+            pick = selection_confiance(cons, cotes)
+            if not pick:
+                continue
+            label = f"{fx.home_name} - {fx.away_name}"
+            sel = construire_selection(label, _nom_ligue(fx.league), fx.fixture_id,
+                                       fx.date, pick[0], pick[1], cotes)
+            if sel.cote > 1.0:
+                pool.append(sel)
+
+        # taille et tolérance adaptées à la cote visée (10 => plus de jambes)
+        taille_max = 4 if cote_cible <= 3 else (5 if cote_cible <= 6 else 7)
+        tolerance = max(0.6, cote_cible * 0.25)
+        combines = generer_combines(
+            pool, nb_combines=nb_tickets, cote_cible=cote_cible,
+            tolerance=tolerance, taille_min=2, taille_max=taille_max, value_min=-1.0,
+        )
+
+        tickets = []
+        for c in combines:
+            combine_dict = {
+                "cote_totale": round(c.cote_totale, 2),
+                "proba_reussite": round(c.proba_combinee, 4),
+                "value": round(c.value_combinee, 4),
+                "selections": [
+                    {"match": s.match, "ligue": s.ligue, "marche": s.marche,
+                     "cote": s.cote, "proba": round(s.proba, 4),
+                     "fixture_id": s.fixture_id, "cle": s.cle, "match_date": s.match_date}
+                    for s in c.selections
+                ],
+            }
+            tickets.append(store.sauver_ticket_premium(combine_dict, cote_cible))
+
+        return JSONResponse({
+            "genere_le": datetime.now(timezone.utc).isoformat(),
+            "cote_cible": cote_cible,
+            "nb_matchs_pool": len(pool),
+            "nb_tickets": len(tickets),
+            "tickets": tickets,
+            "dates_scannees": dates_ok,
+        })
+    except Exception as e:
+        log.exception("premium_generer: ÉCHEC : %s", e)
+        return JSONResponse({"erreur": str(e)}, status_code=500)
+
+
+@app.get("/api/premium/tickets")
+def premium_list():
+    return store.lister_tickets_premium()
+
+
+@app.patch("/api/premium/tickets/{ticket_id}")
+def premium_statut(ticket_id: int, body: StatutIn):
+    try:
+        t = store.definir_statut_premium(ticket_id, body.statut)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not t:
+        raise HTTPException(status_code=404, detail="Ticket introuvable")
+    return t
+
+
+@app.delete("/api/premium/tickets/{ticket_id}")
+def premium_del(ticket_id: int):
+    store.supprimer_ticket_premium(ticket_id)
+    return {"ok": True}
 
 
 @app.get("/api/analytics")

@@ -12,6 +12,7 @@ const NAV = [
   { href: "/", label: "Accueil", icon: "home" },
   { href: "/scores", label: "Scores", icon: "scoreboard" },
   { href: "/generate", label: "Générer", icon: "bolt" },
+  { href: "/premium", label: "Premium", icon: "workspace_premium" },
   { href: "/analyses", label: "Analyses", icon: "insights" },
   { href: "/backtest", label: "Backtest", icon: "science" },
   { href: "/modele", label: "Modèle", icon: "smart_toy" },

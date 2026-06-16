@@ -92,8 +92,14 @@ export default function Analyses() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-lg">
         {analyses
           .filter((a) => filtre === "Toutes" || a.ligue === filtre)
-          .map((a) => (
-            <AnalyseMatch key={a.fixture_id} a={a} href={`/match/${a.fixture_id}`} />
+          .map((a, i) => (
+            <div
+              key={a.fixture_id}
+              className="card-enter"
+              style={{ animationDelay: `${Math.min(i * 50, 600)}ms` }}
+            >
+              <AnalyseMatch a={a} href={`/match/${a.fixture_id}`} />
+            </div>
           ))}
       </div>
     </>

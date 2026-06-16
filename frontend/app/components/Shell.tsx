@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useTicketBuilder } from "../lib/useTicketBuilder";
 import Icon from "./Icon";
 import LiveWidget from "./LiveWidget";
+import Logo from "./Logo";
 import ThemeToggle from "./ThemeToggle";
 
 const NAV = [
@@ -27,11 +28,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       {/* Barre supérieure */}
       <header className="fixed top-0 w-full z-50 bg-surface/60 backdrop-blur-xl border-b border-white/10 flex justify-between items-center px-margin-mobile md:px-margin-desktop h-16">
         <div className="flex items-center gap-md">
-          <Link
-            href="/"
-            className="font-display-lg text-headline-lg font-black tracking-tighter text-primary"
-          >
-            EDGE
+          <Link href="/" className="transition-transform hover:scale-105 active:scale-95">
+            <Logo size={30} />
           </Link>
         </div>
         <div className="flex items-center gap-sm">

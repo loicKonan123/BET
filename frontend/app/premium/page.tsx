@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import Icon from "../components/Icon";
 import {
@@ -24,6 +25,13 @@ const LABEL: Record<string, string> = {
   perdu: "Perdu",
 };
 
+// Niveau de risque calculé selon la probabilité de réussite du ticket
+function risque(proba: number): { label: string; cls: string; icon: string } {
+  if (proba >= 0.45) return { label: "Sûr", cls: "bg-primary/20 text-primary", icon: "shield" };
+  if (proba >= 0.3) return { label: "Modéré", cls: "bg-tertiary/20 text-tertiary", icon: "balance" };
+  return { label: "Risky", cls: "bg-error/20 text-error", icon: "local_fire_department" };
+}
+
 export default function Premium() {
   const [coteCible, setCoteCible] = useState(3);
   const [nbTickets, setNbTickets] = useState(5);
@@ -43,11 +51,11 @@ export default function Premium() {
     charger();
   }, []);
 
-  async function generer() {
+  async function generer(cote: number) {
     setLoading(true);
     setErreur(null);
     try {
-      const r = await genererPremium(coteCible, nbTickets, 3);
+      const r = await genererPremium(cote, nbTickets, 3);
       if (r.erreur) setErreur(r.erreur);
       else await charger(); // les nouveaux tickets sont persistés → on recharge
     } catch (e) {
@@ -120,23 +128,29 @@ export default function Premium() {
           </select>
         </div>
 
-        <button
-          onClick={generer}
-          disabled={loading}
-          className="md:ml-auto flex items-center justify-center gap-sm bg-primary text-on-primary font-headline-sm text-headline-sm px-xl py-md rounded-xl hover:shadow-[0_0_25px_rgba(78,222,163,0.35)] transition-all active:scale-95 disabled:opacity-50 group"
-        >
-          {loading ? (
-            <>
+        <div className="md:ml-auto flex flex-col sm:flex-row gap-sm">
+          <button
+            onClick={() => generer(coteCible)}
+            disabled={loading}
+            className="flex items-center justify-center gap-sm bg-primary text-on-primary font-headline-sm text-headline-sm px-xl py-md rounded-xl hover:shadow-[0_0_25px_rgba(78,222,163,0.35)] transition-all active:scale-95 disabled:opacity-50 group"
+          >
+            {loading ? (
               <span className="w-5 h-5 border-2 border-on-primary border-t-transparent rounded-full animate-spin" />
-              Scan en cours…
-            </>
-          ) : (
-            <>
+            ) : (
               <Icon name="bolt" className="group-hover:animate-pulse" />
-              Générer (cote {coteCible})
-            </>
-          )}
-        </button>
+            )}
+            Générer (cote {coteCible})
+          </button>
+          <button
+            onClick={() => generer(20)}
+            disabled={loading}
+            title="Combiné très haute cote — risqué"
+            className="flex items-center justify-center gap-sm bg-error/15 text-error border border-error/30 font-label-md text-label-md px-lg py-md rounded-xl hover:bg-error/25 transition-all active:scale-95 disabled:opacity-50"
+          >
+            <Icon name="local_fire_department" style={{ fontSize: 18 }} />
+            Boosté (cote 20)
+          </button>
+        </div>
       </div>
 
       {erreur && (
@@ -159,31 +173,60 @@ export default function Premium() {
             className="glass-card p-lg rounded-xl flex flex-col card-enter"
             style={{ animationDelay: `${Math.min(i * 50, 500)}ms` }}
           >
-            <div className="flex justify-between items-center mb-md">
+            <div className="flex justify-between items-center mb-md gap-sm flex-wrap">
               <span className="flex items-center gap-xs font-mono font-bold text-tertiary">
                 <Icon name="workspace_premium" style={{ fontSize: 16 }} />
                 Cible {t.cote_cible}
               </span>
-              <span className={`px-sm py-xs rounded font-label-sm text-label-sm font-bold ${BADGE[t.statut]}`}>
-                {LABEL[t.statut]}
-              </span>
+              <div className="flex items-center gap-sm">
+                {(() => {
+                  const r = risque(t.proba_reussite);
+                  return (
+                    <span className={`flex items-center gap-xs px-sm py-xs rounded font-label-sm text-label-sm font-bold ${r.cls}`}>
+                      <Icon name={r.icon} style={{ fontSize: 13 }} />
+                      {r.label}
+                    </span>
+                  );
+                })()}
+                <span className={`px-sm py-xs rounded font-label-sm text-label-sm font-bold ${BADGE[t.statut]}`}>
+                  {LABEL[t.statut]}
+                </span>
+              </div>
             </div>
 
             <div className="flex flex-col gap-sm mb-md flex-1">
-              {t.selections.map((s, j) => (
-                <div key={j} className="flex justify-between items-center p-sm rounded bg-white/5 border border-white/5">
-                  <div className="flex flex-col">
-                    <span className="font-body-sm text-body-sm text-on-surface">{s.match}</span>
-                    <span className="font-label-sm text-label-sm text-secondary">🏆 {s.ligue} · {s.marche}</span>
-                    {s.match_date && (
-                      <span className="font-label-sm text-label-sm text-on-surface-variant/70">
-                        {dateHeureCanada(s.match_date)}
-                      </span>
-                    )}
+              {t.selections.map((s, j) => {
+                const contenu = (
+                  <>
+                    <div className="flex flex-col">
+                      <span className="font-body-sm text-body-sm text-on-surface">{s.match}</span>
+                      <span className="font-label-sm text-label-sm text-secondary">🏆 {s.ligue} · {s.marche}</span>
+                      {s.match_date && (
+                        <span className="font-label-sm text-label-sm text-on-surface-variant/70">
+                          {dateHeureCanada(s.match_date)}
+                        </span>
+                      )}
+                    </div>
+                    <span className="flex items-center gap-xs font-mono text-on-surface-variant">
+                      {s.cote.toFixed(2)}
+                      {s.fixture_id && <Icon name="arrow_forward" style={{ fontSize: 14 }} className="text-primary" />}
+                    </span>
+                  </>
+                );
+                return s.fixture_id ? (
+                  <Link
+                    key={j}
+                    href={`/match/${s.fixture_id}`}
+                    className="flex justify-between items-center p-sm rounded bg-white/5 border border-white/5 hover:border-primary/30 transition-colors"
+                  >
+                    {contenu}
+                  </Link>
+                ) : (
+                  <div key={j} className="flex justify-between items-center p-sm rounded bg-white/5 border border-white/5">
+                    {contenu}
                   </div>
-                  <span className="font-mono text-on-surface-variant">{s.cote.toFixed(2)}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="grid grid-cols-3 gap-sm pt-md border-t border-white/10 mb-md text-center">

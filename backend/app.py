@@ -754,8 +754,21 @@ def premium_generer(
             if sel.cote > 1.0:
                 pool.append(sel)
 
-        # taille et tolérance adaptées à la cote visée (10 => plus de jambes)
-        taille_max = 4 if cote_cible <= 3 else (5 if cote_cible <= 6 else 7)
+        # On garde les meilleures sélections (par proba) et on plafonne le pool
+        # pour éviter l'explosion combinatoire sur les hautes cotes.
+        pool.sort(key=lambda s: s.proba, reverse=True)
+        pool = pool[:18]
+
+        # taille et tolérance adaptées à la cote visée (plus la cote est haute,
+        # plus il faut de jambes — cotes boostées incluses)
+        if cote_cible <= 3:
+            taille_max = 4
+        elif cote_cible <= 6:
+            taille_max = 5
+        elif cote_cible <= 12:
+            taille_max = 7
+        else:
+            taille_max = 9  # cote boostée (15-20+)
         tolerance = max(0.6, cote_cible * 0.25)
         combines = generer_combines(
             pool, nb_combines=nb_tickets, cote_cible=cote_cible,

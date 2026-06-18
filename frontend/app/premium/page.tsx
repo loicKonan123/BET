@@ -4,8 +4,11 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import Icon from "../components/Icon";
 import {
+  Combine,
   TicketPremium,
   genererPremium,
+  genererTicketSur,
+  sauverPremium,
   listerPremium,
   definirResultatPremium,
   supprimerPremium,
@@ -38,6 +41,8 @@ export default function Premium() {
   const [loading, setLoading] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [tickets, setTickets] = useState<TicketPremium[]>([]);
+  const [brouillon, setBrouillon] = useState<Combine | null>(null);
+  const [loadingSur, setLoadingSur] = useState(false);
 
   async function charger() {
     try {
@@ -63,6 +68,38 @@ export default function Premium() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function genererSur() {
+    setLoadingSur(true);
+    setErreur(null);
+    try {
+      const r = await genererTicketSur(8, 3);
+      if (r.erreur) setErreur(r.erreur);
+      else setBrouillon(r.ticket);
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : "Erreur réseau");
+    } finally {
+      setLoadingSur(false);
+    }
+  }
+
+  function retirerMatch(idx: number) {
+    setBrouillon((b) => {
+      if (!b) return b;
+      const sels = b.selections.filter((_, i) => i !== idx);
+      if (sels.length === 0) return null;
+      const cote = sels.reduce((a, s) => a * s.cote, 1);
+      const proba = sels.reduce((a, s) => a * s.proba, 1);
+      return { cote_totale: cote, proba_reussite: proba, value: proba * cote - 1, selections: sels };
+    });
+  }
+
+  async function sauverBrouillon() {
+    if (!brouillon) return;
+    await sauverPremium(brouillon);
+    setBrouillon(null);
+    await charger();
   }
 
   async function marquer(id: number, statut: "gagne" | "perdu" | "en_attente") {
@@ -142,13 +179,17 @@ export default function Premium() {
             Générer (cote {coteCible})
           </button>
           <button
-            onClick={() => generer(20)}
-            disabled={loading}
-            title="Combiné très haute cote — risqué"
-            className="flex items-center justify-center gap-sm bg-error/15 text-error border border-error/30 font-label-md text-label-md px-lg py-md rounded-xl hover:bg-error/25 transition-all active:scale-95 disabled:opacity-50"
+            onClick={genererSur}
+            disabled={loadingSur}
+            title="Combiné des 8 matchs les plus sûrs — éditable"
+            className="flex items-center justify-center gap-sm bg-secondary-container text-on-secondary-container font-label-md text-label-md px-lg py-md rounded-xl hover:opacity-90 transition-all active:scale-95 disabled:opacity-50"
           >
-            <Icon name="local_fire_department" style={{ fontSize: 18 }} />
-            Boosté (cote 20)
+            {loadingSur ? (
+              <span className="w-5 h-5 border-2 border-on-secondary-container border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Icon name="verified_user" style={{ fontSize: 18 }} />
+            )}
+            Ticket très sûr (8 matchs)
           </button>
         </div>
       </div>
@@ -156,6 +197,63 @@ export default function Premium() {
       {erreur && (
         <div className="glass-card border-error/40 text-error p-lg rounded-xl mb-lg">
           Erreur : {erreur}
+        </div>
+      )}
+
+      {/* Brouillon « ticket très sûr » — éditable avant sauvegarde */}
+      {brouillon && (
+        <div className="glass-card rounded-xl p-lg mb-xl border-secondary/30">
+          <div className="flex items-center justify-between gap-sm mb-md flex-wrap">
+            <h2 className="font-headline-sm text-headline-sm text-on-surface flex items-center gap-sm">
+              <Icon name="verified_user" className="text-primary" />
+              Ticket très sûr — {brouillon.selections.length} matchs
+            </h2>
+            <button
+              onClick={() => setBrouillon(null)}
+              className="font-label-sm text-label-sm text-on-surface-variant hover:text-error"
+            >
+              Annuler
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-sm mb-md">
+            {brouillon.selections.map((s, j) => (
+              <div key={j} className="flex items-center gap-sm p-sm rounded bg-white/5 border border-white/5">
+                <div className="flex flex-col flex-1">
+                  <span className="font-body-sm text-body-sm text-on-surface">{s.match}</span>
+                  <span className="font-label-sm text-label-sm text-secondary">🏆 {s.ligue} · {s.marche}</span>
+                  {s.match_date && (
+                    <span className="font-label-sm text-label-sm text-on-surface-variant/70">
+                      {dateHeureCanada(s.match_date)}
+                    </span>
+                  )}
+                </div>
+                <span className="font-mono text-on-surface-variant">{s.cote.toFixed(2)}</span>
+                <span className="font-mono text-primary text-label-sm">{Math.round(s.proba * 100)}%</span>
+                <button
+                  onClick={() => retirerMatch(j)}
+                  title="Retirer ce match"
+                  className="px-xs text-on-surface-variant hover:text-error transition-colors"
+                >
+                  <Icon name="close" style={{ fontSize: 18 }} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between gap-md flex-wrap pt-md border-t border-white/10">
+            <div className="flex gap-lg font-mono">
+              <span>Cote <span className="font-bold text-primary">{brouillon.cote_totale.toFixed(2)}</span></span>
+              <span>Proba <span className="font-bold text-secondary">{Math.round(brouillon.proba_reussite * 100)}%</span></span>
+            </div>
+            <button
+              onClick={sauverBrouillon}
+              className="flex items-center gap-sm bg-primary text-on-primary font-label-md text-label-md px-lg py-sm rounded-lg hover:opacity-90 transition-all active:scale-95"
+            >
+              <Icon name="bookmark_add" style={{ fontSize: 18 }} />
+              Sauvegarder ce ticket
+            </button>
+          </div>
         </div>
       )}
 

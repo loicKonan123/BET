@@ -645,6 +645,7 @@ class SelectionIn(BaseModel):
     proba: float
     fixture_id: int = 0
     cle: str = ""
+    match_date: str = ""
 
 
 class TicketIn(BaseModel):
@@ -703,6 +704,44 @@ def settle():
 
 # ===================== PREMIUM : tickets cote cible (3/5/10) =====================
 
+def _pool_premium(api, jours: int, valider: int, max_matchs: int):
+    """Sélections confiantes (consensus) sur les matchs à venir (>= 2h avant le
+    coup d'envoi). Renvoie (pool[Selection], dates_scannees)."""
+    fixtures, dates_ok = _scanner_fixtures(api, jours, valider, max_matchs)
+    limite = datetime.now(timezone.utc) + timedelta(hours=2)
+
+    def _a_venir(fx) -> bool:
+        if fx.status not in ("NS", "TBD"):
+            return False
+        try:
+            ko = datetime.fromisoformat((fx.date or "").replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            return False
+        return ko >= limite
+
+    pool = []
+    for fx in (f for f in fixtures if _a_venir(f)):
+        try:
+            cotes = recuperer_cotes(api, fx.fixture_id)
+        except Exception:
+            cotes = {}
+        cotes_1x2 = {k: cotes.get(k) for k in ("1", "X", "2") if cotes.get(k)}
+        mm = consensus_match(api, fx.league, fx.season, fx.home_id, fx.away_id,
+                             cotes_1x2=cotes_1x2 or None)
+        cons = mm["consensus"].get("probabilites")
+        if not cons:
+            continue
+        pick = selection_confiance(cons, cotes)
+        if not pick:
+            continue
+        label = f"{fx.home_name} - {fx.away_name}"
+        sel = construire_selection(label, _nom_ligue(fx.league), fx.fixture_id,
+                                   fx.date, pick[0], pick[1], cotes)
+        if sel.cote > 1.0:
+            pool.append(sel)
+    return pool, dates_ok
+
+
 @app.get("/api/premium/generer")
 def premium_generer(
     cote_cible: float = 3.0,
@@ -716,43 +755,7 @@ def premium_generer(
     """
     try:
         api = ApiFootball()
-        fixtures, dates_ok = _scanner_fixtures(api, jours, valider, max_matchs)
-
-        # On ne garde que les matchs À VENIR, avec au moins 2h avant le coup
-        # d'envoi (le temps de placer le pari) — pas de match commencé/imminent.
-        limite = datetime.now(timezone.utc) + timedelta(hours=2)
-
-        def _a_venir(fx) -> bool:
-            if fx.status not in ("NS", "TBD"):
-                return False
-            try:
-                ko = datetime.fromisoformat((fx.date or "").replace("Z", "+00:00"))
-            except (ValueError, AttributeError):
-                return False
-            return ko >= limite
-
-        fixtures = [fx for fx in fixtures if _a_venir(fx)]
-
-        pool = []
-        for fx in fixtures:
-            try:
-                cotes = recuperer_cotes(api, fx.fixture_id)
-            except Exception:
-                cotes = {}
-            cotes_1x2 = {k: cotes.get(k) for k in ("1", "X", "2") if cotes.get(k)}
-            mm = consensus_match(api, fx.league, fx.season, fx.home_id, fx.away_id,
-                                 cotes_1x2=cotes_1x2 or None)
-            cons = mm["consensus"].get("probabilites")
-            if not cons:
-                continue
-            pick = selection_confiance(cons, cotes)
-            if not pick:
-                continue
-            label = f"{fx.home_name} - {fx.away_name}"
-            sel = construire_selection(label, _nom_ligue(fx.league), fx.fixture_id,
-                                       fx.date, pick[0], pick[1], cotes)
-            if sel.cote > 1.0:
-                pool.append(sel)
+        pool, dates_ok = _pool_premium(api, jours, valider, max_matchs)
 
         # On garde les meilleures sélections (par proba) et on plafonne le pool
         # pour éviter l'explosion combinatoire sur les hautes cotes.
@@ -823,6 +826,58 @@ def premium_statut(ticket_id: int, body: StatutIn):
 def premium_del(ticket_id: int):
     store.supprimer_ticket_premium(ticket_id)
     return {"ok": True}
+
+
+@app.get("/api/premium/sur")
+def premium_sur(n: int = 8, jours: int = 3, max_matchs: int = 60,
+                valider: int = 1, proba_min: float = 0.6):
+    """Brouillon d'un ticket TRÈS SÛR : les n matchs à plus forte probabilité
+    (consensus), un seul par match. NON persisté — l'utilisateur peut retirer
+    des matchs puis sauvegarder via POST /api/premium/tickets.
+    """
+    try:
+        api = ApiFootball()
+        pool, dates_ok = _pool_premium(api, jours, valider, max_matchs)
+        surs = sorted([s for s in pool if s.proba >= proba_min],
+                      key=lambda s: s.proba, reverse=True)
+        if len(surs) < n:  # pas assez au-dessus du seuil -> complète avec les + probables
+            restants = sorted([s for s in pool if s.proba < proba_min],
+                              key=lambda s: s.proba, reverse=True)
+            surs = surs + restants
+        surs = surs[:n]
+
+        cote_totale, proba = 1.0, 1.0
+        for s in surs:
+            cote_totale *= s.cote
+            proba *= s.proba
+        ticket = {
+            "cote_totale": round(cote_totale, 2),
+            "proba_reussite": round(proba, 4),
+            "value": round(proba * cote_totale - 1, 4),
+            "selections": [
+                {"match": s.match, "ligue": s.ligue, "marche": s.marche,
+                 "cote": s.cote, "proba": round(s.proba, 4),
+                 "fixture_id": s.fixture_id, "cle": s.cle, "match_date": s.match_date}
+                for s in surs
+            ],
+        }
+        return JSONResponse({"genere_le": datetime.now(timezone.utc).isoformat(),
+                             "dates_scannees": dates_ok, "ticket": ticket})
+    except Exception as e:
+        log.exception("premium_sur: ÉCHEC : %s", e)
+        return JSONResponse({"erreur": str(e)}, status_code=500)
+
+
+@app.post("/api/premium/tickets")
+def premium_creer(body: TicketIn):
+    """Persiste un ticket premium (ex. le ticket très sûr édité par l'utilisateur)."""
+    combine = {
+        "cote_totale": body.cote_totale,
+        "proba_reussite": body.proba_reussite,
+        "value": body.value,
+        "selections": [s.model_dump() for s in body.selections],
+    }
+    return store.sauver_ticket_premium(combine, cote_cible=body.cote_totale, mise=body.mise)
 
 
 @app.get("/api/analytics")

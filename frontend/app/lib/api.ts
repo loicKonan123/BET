@@ -300,6 +300,27 @@ export async function supprimerPremium(id: number): Promise<void> {
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
 }
 
+// Brouillon « ticket très sûr » (n matchs les plus probables) — non persisté
+export async function genererTicketSur(
+  n = 8,
+  jours = 3
+): Promise<{ ticket: Combine; dates_scannees: string[]; erreur?: string }> {
+  const r = await fetch(`${API_URL}/api/premium/sur?n=${n}&jours=${jours}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+// Persiste un ticket premium (ex. le ticket très sûr édité)
+export async function sauverPremium(c: Combine): Promise<TicketPremium> {
+  const r = await fetch(`${API_URL}/api/premium/tickets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(c),
+  });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
 export type Analytics = {
   total: number;
   gagnes: number;

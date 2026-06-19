@@ -395,7 +395,7 @@ def _classement(api, league: int, season: int, home_id: int, away_id: int,
 def _derniers_matchs(api, team_id: int) -> list[dict]:
     """5 derniers matchs d'une équipe avec score réel."""
     try:
-        data = api.get("fixtures", {"team": team_id, "last": 5})
+        data = api.get("fixtures", {"team": team_id, "last": 5}, ttl=600)
         out = []
         for f in data.get("response", []):
             sh = f["score"]["fulltime"]["home"]
@@ -959,7 +959,7 @@ def team_detail(team_id: int):
         team  = team_resp[0]["team"]
         venue = team_resp[0].get("venue", {})
 
-        fix_data = api.get("fixtures", {"team": team_id, "last": 15})
+        fix_data = api.get("fixtures", {"team": team_id, "last": 15}, ttl=600)
         matchs = []
         for f in fix_data.get("response", []):
             sh = f["score"]["fulltime"]["home"]

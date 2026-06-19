@@ -37,12 +37,18 @@ class ApiFootball:
             slug += "_" + "_".join(f"{k}-{v}" for k, v in sorted(params.items()))
         return CACHE_DIR / f"{slug}.json"
 
-    def get(self, endpoint: str, params: dict | None = None, use_cache: bool = True) -> dict:
+    def get(self, endpoint: str, params: dict | None = None,
+            use_cache: bool = True, ttl: float | None = None) -> dict:
+        """ttl = durée de validité du cache en secondes (None = permanent).
+        Pour les données qui changent (résultats récents, scores), passer un TTL
+        court afin de rafraîchir au lieu de servir un cache figé."""
         params = params or {}
         cache_file = self._cache_path(endpoint, params)
         if use_cache and cache_file.exists():
-            log.info("GET %s %s [CACHE]", endpoint, params)
-            return json.loads(cache_file.read_text(encoding="utf-8"))
+            frais = ttl is None or (time.time() - cache_file.stat().st_mtime) < ttl
+            if frais:
+                log.info("GET %s %s [CACHE]", endpoint, params)
+                return json.loads(cache_file.read_text(encoding="utf-8"))
 
         log.info("GET %s %s [RÉSEAU]", endpoint, params)
         url = f"{BASE_URL}/{endpoint.lstrip('/')}"

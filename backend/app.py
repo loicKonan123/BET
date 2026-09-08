@@ -8,9 +8,13 @@ L'endpoint /api/generer fait tourner le pipeline et renvoie le JSON
 (combinés + analyses). Grâce au cache disque, recliquer ne reconsomme
 pas le quota API.
 """
+import argparse
+import errno
 import logging
+import socket
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
+from time import perf_counter
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -28,10 +32,13 @@ log = logging.getLogger("edge")
 
 from src import store
 from src.analyste import analyser_avec_ia
+from src.analyse_editoriale import VERSION_ANALYSE
 from src.api_client import ApiFootball
 from src.blend import conseil_consensus
 from src.combines import generer_combines
-from src.consensus import consensus_match
+from math import isfinite, prod
+from src.match_data import utc, score_90
+from src.prediction_service import charger_modele
 from src.ligues_mise_o_jeu import IDS_SOCCER, LIGUES_SOCCER
 from src.ml_service import entrainer_club, etude_club, modele_club_si_pret
 from src.odds_parser import recuperer_cotes
@@ -100,7 +107,7 @@ def _settle_tickets() -> dict:
     N'appelle l'API que pour les fixtures dont l'heure de coup d'envoi + 2h est passée,
     afin de ne pas gaspiller le quota API-Football.
     """
-    tickets = store.lister_tickets()
+    tickets = [{**t, "premium":False} for t in store.lister_tickets()] + [{**t, "premium":True} for t in store.lister_tickets_premium()]
     en_attente = [t for t in tickets if t["statut"] == "en_attente"]
     if not en_attente:
         return {"settled": 0, "skipped": 0}
@@ -131,8 +138,8 @@ def _settle_tickets() -> dict:
             if f["fixture"]["status"]["short"] not in ("FT", "AET", "PEN"):
                 cache_scores[fid] = None
                 continue
-            s = f["score"]["fulltime"]
-            cache_scores[fid] = {"home": s["home"], "away": s["away"]}
+            s = score_90(f)
+            cache_scores[fid] = {"home": s[0], "away": s[1]} if s else None
         except Exception:
             cache_scores[fid] = None
 
@@ -152,10 +159,10 @@ def _settle_tickets() -> dict:
             resultats.append(_grader_selection(cle, score["home"], score["away"]))
 
         if any(r is False for r in resultats):
-            store.definir_statut(ticket["id"], "perdu")
+            (store.definir_statut_premium if ticket["premium"] else store.definir_statut)(ticket["id"], "perdu")
             settled += 1
         elif resultats and all(r is True for r in resultats):
-            store.definir_statut(ticket["id"], "gagne")
+            (store.definir_statut_premium if ticket["premium"] else store.definir_statut)(ticket["id"], "gagne")
             settled += 1
 
     return {"settled": settled, "skipped": len(en_attente) - settled}
@@ -247,15 +254,11 @@ def generer(
         selections = []
         analyses = []
         for fx in fixtures:
-            try:
-                cotes = recuperer_cotes(api, fx.fixture_id)
-            except Exception as e:
-                log.exception("generer: cotes ÉCHEC fixture=%s : %s", fx.fixture_id, e)
-                cotes = {}
-            cotes_1x2 = {k: cotes.get(k) for k in ("1", "X", "2") if cotes.get(k)}
-
-            mm = consensus_match(api, fx.league, fx.season, fx.home_id, fx.away_id,
-                                 cotes_1x2=cotes_1x2 or None)
+            detail = analyser_fixture(api, fx, stats_season=stats_season)
+            if not detail:
+                continue
+            mm = detail["multi_modeles"]
+            cotes = mm["cotes"]
             cons = mm["consensus"].get("probabilites")
             if not cons:
                 continue
@@ -275,6 +278,8 @@ def generer(
                 cle, proba = pick
                 sel = construire_selection(match_label, _nom_ligue(fx.league),
                                            fx.fixture_id, fx.date, cle, proba, cotes)
+                sel.prediction_id = detail["prediction_id"]
+                sel.version_modele = detail["version_modele"]
                 if sel.cote > 0:  # besoin d'une cote pour afficher/grader
                     selections.append(sel)
 
@@ -289,7 +294,7 @@ def generer(
             "selections": [
                 {"match": s.match, "ligue": s.ligue, "marche": s.marche,
                  "cote": s.cote, "proba": round(s.proba, 4),
-                 "fixture_id": s.fixture_id, "cle": s.cle, "match_date": s.match_date}
+                 "fixture_id": s.fixture_id, "cle": s.cle, "match_date": s.match_date, "prediction_id":s.prediction_id, "version_modele":s.version_modele}
                 for s in c.selections
             ],
         } for c in combines]
@@ -335,20 +340,6 @@ def analyses(
         for fx in fixtures:
             r = analyser_fixture_sans_cotes(api, fx, stats_season=stats_season)
             if r:
-                # Consensus modèles (Poisson ajusté + Elo + ML) — sans marché donc
-                # sans appel API : DC, Elo et ML sont déjà en cache. Le marché
-                # (+IA) reste réservé à la page détail.
-                try:
-                    pois = r.get("probabilites", {})
-                    fallback = ({k: pois.get(k) for k in ("1", "X", "2")}
-                                if pois.get("1") is not None else None)
-                    mm = consensus_match(api, fx.league, fx.season,
-                                         fx.home_id, fx.away_id,
-                                         cotes_1x2=None, poisson_fallback=fallback)
-                    r["consensus"] = mm["consensus"].get("probabilites")
-                    r["sources_consensus"] = mm["consensus"].get("sources_disponibles")
-                except Exception as e:
-                    log.exception("analyses: consensus ÉCHEC fixture=%s : %s", fx.fixture_id, e)
                 out.append(r)
             else:
                 ignores += 1
@@ -493,11 +484,13 @@ def _compos(api, fixture_id: int, status: str = "") -> list[dict]:
         return []
 
 
-def _detail_match(api, fixture_id: int, stats_season: int | None = None) -> dict:
+def _detail_match(api, fixture_id: int, stats_season: int | None = None,
+                  include_extras: bool = True) -> dict:
     """Construit le détail complet d'un match (probas, value, conseil, équipes)."""
     log.info("detail_match: fixture=%s ====================", fixture_id)
     # Sans cache : le statut/score d'un match évolue (NS -> live -> FT). Un
     # fixture mis en cache à l'état "à venir" donnerait un score périmé.
+    t0 = perf_counter()
     data = api.get("fixtures", {"id": fixture_id}, use_cache=False)
     resp = data.get("response", [])
     if not resp:
@@ -509,17 +502,8 @@ def _detail_match(api, fixture_id: int, stats_season: int | None = None) -> dict
              fx.home_name, fx.away_name, fx.status, fx.buts_dom, fx.buts_ext)
 
     res = analyser_fixture(api, fx, stats_season=stats_season)
-    if res:
-        res["conseil"] = conseil_de_paris(res.get("selections", []))
-    else:
-        res = analyser_fixture_sans_cotes(api, fx, stats_season=stats_season)
-        if not res:
-            raise HTTPException(status_code=422, detail="Données insuffisantes pour ce match")
-        res["selections"] = []
-        res["conseil"] = conseil_de_paris(
-            [{"marche": m["marche"], "proba": m["proba"], "value": 0}
-             for m in res.get("marches", [])]
-        )
+    if not res:
+        raise HTTPException(status_code=422, detail="Historique insuffisant pour ce match")
 
     res["date"] = f["fixture"]["date"]
     res["league_id"] = f["league"]["id"]
@@ -537,11 +521,19 @@ def _detail_match(api, fixture_id: int, stats_season: int | None = None) -> dict
     match_status = f["fixture"]["status"]["short"]
     est_frais = match_status in STATUTS_LIVE or match_status in {"FT", "AET", "PEN"}
     res["classement"] = _classement(api, fx.league, fx.season, fx.home_id, fx.away_id, frais=est_frais)
-    res["derniers_matchs_dom"] = _derniers_matchs(api, fx.home_id)
-    res["derniers_matchs_ext"] = _derniers_matchs(api, fx.away_id)
-    res["h2h"] = _h2h(api, fx.home_id, fx.away_id)
-    res["compos"] = _compos(api, fixture_id, status=f["fixture"]["status"]["short"])
     res["multi_modeles"] = _multi_modeles(api, fx, res)
+    if include_extras:
+        res["derniers_matchs_dom"] = _derniers_matchs(api, fx.home_id)
+        res["derniers_matchs_ext"] = _derniers_matchs(api, fx.away_id)
+        res["h2h"] = _h2h(api, fx.home_id, fx.away_id)
+        res["compos"] = _compos(api, fixture_id, status=f["fixture"]["status"]["short"])
+    else:
+        res["derniers_matchs_dom"] = []
+        res["derniers_matchs_ext"] = []
+        res["h2h"] = []
+        res["compos"] = []
+    log.info("detail_match: fixture=%s OK en %.2fs (extras=%s)",
+             fixture_id, perf_counter() - t0, include_extras)
     return res
 
 
@@ -557,28 +549,7 @@ def _multi_modeles(api, fx, res: dict) -> dict:
     consensus statistique. Tolérant aux erreurs : toute source qui échoue est
     simplement omise.
     """
-    # Poisson par moyennes brutes (déjà dans res) servant de repli si le modèle
-    # Dixon-Coles ajusté n'est pas disponible pour ce match.
-    probas = res.get("probabilites", {})
-    poisson_fallback = ({k: probas.get(k) for k in ("1", "X", "2")}
-                        if probas.get("1") is not None else None)
-    cotes_1x2 = {s.get("cle"): s.get("cote") for s in res.get("selections", [])
-                 if s.get("cle") in ("1", "X", "2") and s.get("cote")}
-
-    mm = consensus_match(api, fx.league, fx.season, fx.home_id, fx.away_id,
-                         cotes_1x2=cotes_1x2 or None, poisson_fallback=poisson_fallback)
-
-    # Le conseil est fondé sur le CONSENSUS (cohérent avec la carte affichée),
-    # pas sur le Poisson seul. La value se mesure contre le marché.
-    probas_cons = mm["consensus"].get("probabilites")
-    if probas_cons:
-        cotes_all = {s.get("cle"): s.get("cote") for s in res.get("selections", [])
-                     if s.get("cote")}
-        conseil = conseil_consensus(probas_cons, cotes_all)
-        if conseil:
-            res["conseil"] = conseil
-
-    return mm
+    return res.get("multi_modeles") or {}
 
 
 @app.get("/api/match/{fixture_id}")
@@ -593,9 +564,17 @@ def match_detail(fixture_id: int, stats_season: int | None = None):
         return JSONResponse({"erreur": str(e)}, status_code=500)
 
 
+def _cache_ia_frais(cache):
+    try:
+        age = (datetime.now(timezone.utc)-utc(cache["cree_le"])).total_seconds()
+        return bool(cache.get("prediction_id")) and 0 <= age < 300
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 @app.get("/api/match/{fixture_id}/ia")
 def match_ia(fixture_id: int, stats_season: int | None = None,
-             force: int = 0, cache_only: int = 0):
+             force: int = 0, cache_only: int = 0, prediction_id: str = ""):
     """Analyse fine par le cerveau LLM (DeepSeek) — à la demande, avec cache.
 
     force=1      force une nouvelle analyse (ignore le cache).
@@ -608,7 +587,7 @@ def match_ia(fixture_id: int, stats_season: int | None = None,
             cache = store.get_analyse_ia(fixture_id)
             # On ne sert le cache que s'il est au FORMAT À JOUR (verdict d'équipe).
             # Les analyses à l'ancien format sont régénérées automatiquement.
-            if cache and "probabilites_finales" in cache:
+            if cache and cache.get("version_analyse") == VERSION_ANALYSE and cache.get("analyse_detaillee") and _cache_ia_frais(cache) and (not prediction_id or cache.get("prediction_id") == prediction_id):
                 log.info("ia: fixture=%s servie depuis le cache", fixture_id)
                 return JSONResponse(cache)
             if cache_only:
@@ -620,13 +599,17 @@ def match_ia(fixture_id: int, stats_season: int | None = None,
         if cache_only:
             return JSONResponse({"cache_absent": True})
 
+        t0 = perf_counter()
         log.info("ia: fixture=%s analyse DeepSeek (force=%s)…", fixture_id, force)
         api = ApiFootball()
-        detail = _detail_match(api, fixture_id, stats_season)
+        detail = _detail_match(api, fixture_id, stats_season, include_extras=True)
+        log.info("ia: fixture=%s dossier prêt en %.2fs", fixture_id, perf_counter() - t0)
         res = analyser_avec_ia(api, detail)
+        log.info("ia: fixture=%s DeepSeek répondu en %.2fs", fixture_id, perf_counter() - t0)
         store.save_analyse_ia(fixture_id, res)
         res["cache"] = False
-        log.info("ia: fixture=%s OK (prediction=%s)", fixture_id, res.get("prediction"))
+        log.info("ia: fixture=%s OK en %.2fs (prediction=%s)",
+                 fixture_id, perf_counter() - t0, res.get("prediction"))
         return JSONResponse(res)
     except HTTPException:
         raise
@@ -660,14 +643,36 @@ class StatutIn(BaseModel):
     statut: str  # en_attente | gagne | perdu
 
 
+def _ticket_canonique(body: TicketIn):
+    if not body.selections or not isfinite(body.mise) or body.mise <= 0:
+        raise HTTPException(422, "Ticket vide ou mise invalide")
+    api, selections, seen = ApiFootball(), [], set()
+    for selection in body.selections:
+        if selection.fixture_id <= 0 or selection.fixture_id in seen:
+            raise HTTPException(422, "Chaque match doit avoir un identifiant unique")
+        if not isfinite(selection.cote) or selection.cote <= 1:
+            raise HTTPException(422, "Cote invalide")
+        seen.add(selection.fixture_id)
+        detail = _detail_match(api, selection.fixture_id, include_extras=False)
+        if detail.get("cadre_prediction") != "avant_match":
+            raise HTTPException(422, "Le match a commence ou n'est pas disponible")
+        probability = detail["probabilites"].get(selection.cle)
+        if probability is None:
+            raise HTTPException(422, "Marche non pris en charge")
+        selections.append({**selection.model_dump(), "match":detail["match"],
+            "ligue":detail["ligue"], "match_date":detail["date"], "proba":probability,
+            "prediction_id":detail["prediction_id"], "version_modele":detail["version_modele"]})
+    cote = prod(s["cote"] for s in selections)
+    proba = prod(s["proba"] for s in selections)
+    if not isfinite(cote):
+        raise HTTPException(422, "Cote totale invalide")
+    return {"cote_totale":round(cote, 2), "proba_reussite":round(proba, 4),
+            "value":round(proba*cote-1, 4), "selections":selections}
+
+
 @app.post("/api/tickets")
 def creer_ticket(body: TicketIn):
-    combine = {
-        "cote_totale": body.cote_totale,
-        "proba_reussite": body.proba_reussite,
-        "value": body.value,
-        "selections": [s.model_dump() for s in body.selections],
-    }
+    combine = _ticket_canonique(body)
     return store.sauver_ticket(combine, mise=body.mise)
 
 
@@ -721,13 +726,11 @@ def _pool_premium(api, jours: int, valider: int, max_matchs: int):
 
     pool = []
     for fx in (f for f in fixtures if _a_venir(f)):
-        try:
-            cotes = recuperer_cotes(api, fx.fixture_id)
-        except Exception:
-            cotes = {}
-        cotes_1x2 = {k: cotes.get(k) for k in ("1", "X", "2") if cotes.get(k)}
-        mm = consensus_match(api, fx.league, fx.season, fx.home_id, fx.away_id,
-                             cotes_1x2=cotes_1x2 or None)
+        detail = analyser_fixture(api, fx)
+        if not detail:
+            continue
+        mm = detail["multi_modeles"]
+        cotes = mm["cotes"]
         cons = mm["consensus"].get("probabilites")
         if not cons:
             continue
@@ -737,6 +740,8 @@ def _pool_premium(api, jours: int, valider: int, max_matchs: int):
         label = f"{fx.home_name} - {fx.away_name}"
         sel = construire_selection(label, _nom_ligue(fx.league), fx.fixture_id,
                                    fx.date, pick[0], pick[1], cotes)
+        sel.prediction_id = detail["prediction_id"]
+        sel.version_modele = detail["version_modele"]
         if sel.cote > 1.0:
             pool.append(sel)
     return pool, dates_ok
@@ -787,7 +792,7 @@ def premium_generer(
                 "selections": [
                     {"match": s.match, "ligue": s.ligue, "marche": s.marche,
                      "cote": s.cote, "proba": round(s.proba, 4),
-                     "fixture_id": s.fixture_id, "cle": s.cle, "match_date": s.match_date}
+                     "fixture_id": s.fixture_id, "cle": s.cle, "match_date": s.match_date, "prediction_id":s.prediction_id, "version_modele":s.version_modele}
                     for s in c.selections
                 ],
             }
@@ -857,7 +862,7 @@ def premium_sur(n: int = 8, jours: int = 3, max_matchs: int = 60,
             "selections": [
                 {"match": s.match, "ligue": s.ligue, "marche": s.marche,
                  "cote": s.cote, "proba": round(s.proba, 4),
-                 "fixture_id": s.fixture_id, "cle": s.cle, "match_date": s.match_date}
+                 "fixture_id": s.fixture_id, "cle": s.cle, "match_date": s.match_date, "prediction_id":s.prediction_id, "version_modele":s.version_modele}
                 for s in surs
             ],
         }
@@ -871,13 +876,8 @@ def premium_sur(n: int = 8, jours: int = 3, max_matchs: int = 60,
 @app.post("/api/premium/tickets")
 def premium_creer(body: TicketIn):
     """Persiste un ticket premium (ex. le ticket très sûr édité par l'utilisateur)."""
-    combine = {
-        "cote_totale": body.cote_totale,
-        "proba_reussite": body.proba_reussite,
-        "value": body.value,
-        "selections": [s.model_dump() for s in body.selections],
-    }
-    return store.sauver_ticket_premium(combine, cote_cible=body.cote_totale, mise=body.mise)
+    combine = _ticket_canonique(body)
+    return store.sauver_ticket_premium(combine, cote_cible=combine["cote_totale"], mise=body.mise)
 
 
 @app.get("/api/analytics")
@@ -903,12 +903,29 @@ def ml_train(league: int, saisons: str = ""):
     try:
         api = ApiFootball()
         sais = [int(s) for s in saisons.split(",") if s.strip()] or [2023, 2024, 2025]
-        modele = entrainer_club(api, league, sais)
-        return JSONResponse({
-            "league": league, "saisons": sais,
-            "pret": modele is not None,
-            "equipes": len(modele.etats) if modele else 0,
-        })
+        from src.prediction_models import entrainer_ensemble
+        from src.prediction_service import xg_cache, chemin_modele, historique_ligue, NATIONAL
+        from threadpoolctl import threadpool_limits
+        import pickle
+        rows = []
+        for saison in sais:
+            rows.extend(historique_ligue(api, league, saison))
+        with threadpool_limits(limits=1):
+            modele = entrainer_ensemble(rows, xg_cache(rows))
+        if modele:
+            if league in NATIONAL:
+                modele.scope = "international"
+                modele.validation["perimetre"] = "international"
+            path = chemin_modele(league)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            from tempfile import NamedTemporaryFile
+            with NamedTemporaryFile(dir=path.parent, suffix=".tmp", delete=False) as tmp:
+                tmp.write(pickle.dumps(modele))
+                temp_path = tmp.name
+            from pathlib import Path
+            Path(temp_path).replace(path)
+        return JSONResponse({"league":league, "saisons":sais, "pret":modele is not None,
+                             "validation":modele.validation if modele else None})
     except Exception as e:
         log.exception("ml_train: ÉCHEC league=%s : %s", league, e)
         return JSONResponse({"erreur": str(e)}, status_code=500)
@@ -928,20 +945,32 @@ ML_LIGUES = [
 def ml_etude(league: int, saisons: str = ""):
     """Résultats de l'étude du modèle ML pour une ligue (ML vs Elo + importance)."""
     try:
-        api = ApiFootball()
-        sais = [int(s) for s in saisons.split(",") if s.strip()] or [2023, 2024]
-        etude = etude_club(api, league, sais)
-        pret = modele_club_si_pret(league) is not None
+        model = charger_modele(league)
+        validation = model.validation if model else {}
+        metrics = validation.get("metriques", {})
+        etude = ({"n_train":validation["n_train"], "n_test":validation["n_test"],
+                  "ml":metrics["ml"], "elo":metrics["elo"], "importance":[],
+                  "validation":validation, "poids":model.weights,
+                  "version_modele":model.version} if model else None)
+        pret = model is not None
+        from src.prediction_audit import bilan_prospectif
         return JSONResponse({
             "league": league,
             "ligue": _nom_ligue(league),
             "entraine": pret,
+            "prospectif": bilan_prospectif(),
             "etude": etude,
             "ligues_disponibles": ML_LIGUES,
         })
     except Exception as e:
         log.exception("ml_etude: ÉCHEC league=%s : %s", league, e)
         return JSONResponse({"erreur": str(e)}, status_code=500)
+
+
+@app.get("/api/modeles/prospectif")
+def modeles_prospectif():
+    from src.prediction_audit import bilan_prospectif
+    return bilan_prospectif()
 
 
 # ===================== Équipes & Joueurs =====================
@@ -1211,5 +1240,35 @@ def score_live(fixture_id: int):
         return JSONResponse({"erreur": str(e)}, status_code=500)
 
 
+def main():
+    parser = argparse.ArgumentParser(description="Serveur BET API")
+    parser.add_argument("--port", type=int, default=8000)
+    args = parser.parse_args()
+    if not 1 <= args.port <= 65535:
+        parser.error("Le port doit être compris entre 1 et 65535.")
+
+    # Réserver le port avant le lifespan pour éviter les appels API inutiles.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind(("127.0.0.1", args.port))
+        except OSError as exc:
+            if exc.errno != errno.EADDRINUSE and getattr(exc, "winerror", None) != 10048:
+                raise
+            log.error(
+                "Le port %s est déjà utilisé. Arrêtez le serveur existant avec "
+                "Ctrl+C dans son terminal, ou utilisez python app.py --port <port_libre>. "
+                "Pour un autre port, adaptez aussi NEXT_PUBLIC_API_URL du frontend.",
+                args.port,
+            )
+            return 1
+        server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=args.port))
+        server.run(sockets=[sock])
+    return 0
+
+
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    raise SystemExit(main())

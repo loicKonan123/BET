@@ -7,6 +7,7 @@ SQLite = zéro installation, fichier unique. Migrable vers PostgreSQL plus tard.
 """
 import json
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,10 +17,26 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 STATUTS = {"en_attente", "gagne", "perdu"}
 
 
-def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+@contextmanager
+def _conn():
+    conn = sqlite3.connect(DB_PATH, timeout=20)
     conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
+
+
+def sauver_prediction(fixture_id, prediction_id, date_match, prediction):
+    """Journal append-only des prévisions réellement produites avant le match."""
+    with _conn() as c:
+        c.execute("""CREATE TABLE IF NOT EXISTS predictions (
+            prediction_id TEXT PRIMARY KEY, fixture_id INTEGER NOT NULL,
+            date_match TEXT NOT NULL, cree_le TEXT NOT NULL, data TEXT NOT NULL)""")
+        c.execute("INSERT OR IGNORE INTO predictions VALUES (?,?,?,?,?)",
+                  (prediction_id,fixture_id,date_match,datetime.now(timezone.utc).isoformat(),
+                   json.dumps(prediction,ensure_ascii=False,allow_nan=False)))
 
 
 def init_db() -> None:

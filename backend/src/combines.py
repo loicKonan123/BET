@@ -23,6 +23,8 @@ class Selection:
     fixture_id: int = 0   # ID API-Football (pour grader le résultat)
     cle: str = ""         # clé marché brute ("1", "X", "over_2.5", …)
     match_date: str = ""  # datetime ISO du match (pour ne checker qu'après coup)
+    prediction_id: str = ""
+    version_modele: str = ""
 
     @property
     def proba_implicite(self) -> float:

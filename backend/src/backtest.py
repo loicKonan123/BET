@@ -1,14 +1,14 @@
-"""Backtest : rejoue le modèle Poisson sur les matchs terminés d'une saison.
+"""Reconstruction chronologique du moteur EDGE, scores a 90 minutes.
 
-Coût API (première exécution) :
-  - 1 appel  : tous les fixtures de la saison (mis en cache)
-  - N appels : stats de chaque équipe unique (N ≈ 20 pour une ligue normale)
-Exécutions suivantes : 0 appel (tout en cache disque).
+Un appel fixtures pour la saison ; les calculs suivants restent locaux.
+Les cotes historiques absentes ne sont jamais remplacees par les prix actuels.
 """
 from datetime import datetime, timezone
 from math import log
 
 from .api_client import ApiFootball
+from .match_data import historique_90
+from .prediction_service import predire_historique, xg_cache, charger_modele
 from .blend import fusionner_1x2
 from .dixon_coles_fit import ajuster
 from .elo import K_DEFAUT_CLUB, RATING_INITIAL, maj_elo, proba_1x2_elo
@@ -104,113 +104,24 @@ def _finaliser(stats: dict) -> dict | None:
     }
 
 
-def evaluer_consensus(reponse: list, frac_train: float = 0.5,
-                      min_test: int = 20) -> dict | None:
-    """Backtest walk-forward du CONSENSUS (Poisson ajusté + Elo), sans fuite.
-
-    Découpe la saison chronologiquement : la 1re moitié sert à ajuster le
-    modèle Dixon-Coles (MLE) et à amorcer les notes Elo ; la 2e moitié est le
-    jeu de TEST hors-échantillon. Pour chaque match de test on prédit AVANT de
-    mettre à jour l'Elo (walk-forward → aucune information du futur).
-
-    Compare 4 estimateurs sur le même jeu de test :
-      - moyennes brutes (l'ancien Poisson, référence)
-      - Poisson ajusté (Dixon-Coles MLE)
-      - Elo seul
-      - consensus (pool logarithmique des deux modèles)
-
-    Pas de marché ici : les cotes de clôture historiques ne sont pas
-    disponibles à moindre coût. On mesure donc la qualité de NOTRE moteur.
-    """
-    fts = []
-    for f in reponse:
-        if f["fixture"]["status"]["short"] not in ("FT", "AET", "PEN"):
-            continue
-        gh, ga = f["goals"]["home"], f["goals"]["away"]
-        if gh is None or ga is None:
-            continue
-        fts.append(f)
-    fts.sort(key=lambda f: f["fixture"]["date"])
-
-    cut = int(len(fts) * frac_train)
-    train, test = fts[:cut], fts[cut:]
-    if len(test) < min_test or len(train) < 30:
+def evaluer_consensus(reponse: list, frac_train: float = 0.5, min_test: int = 20):
+    """Comparaison des sources du moteur commun sur la meme periode."""
+    rows = historique_90(reponse)
+    cut = int(len(rows)*frac_train)
+    if len(rows)-cut < min_test:
         return None
-
-    # 1 — Ajuste Dixon-Coles sur le train (date de réf = dernier match du train)
-    ref = datetime.fromisoformat(train[-1]["fixture"]["date"].replace("Z", "+00:00"))
-    modele = ajuster(train, ref_date=ref, min_matchs=20)
-
-    # 2 — Amorce les notes Elo en rejouant le train chronologiquement
-    ratings: dict[int, float] = {}
-    for f in train:
-        h, a = f["teams"]["home"]["id"], f["teams"]["away"]["id"]
-        rh = ratings.get(h, RATING_INITIAL)
-        ra = ratings.get(a, RATING_INITIAL)
-        ratings[h], ratings[a] = maj_elo(rh, ra, int(f["goals"]["home"]),
-                                         int(f["goals"]["away"]), k=K_DEFAUT_CLUB)
-
-    # 3 — Baseline « moyennes brutes » : stats dom/ext calculées sur le train
-    raw: dict[int, list] = {}  # team -> [gf_dom, gc_dom, n_dom, gf_ext, gc_ext, n_ext]
-    for f in train:
-        h, a = f["teams"]["home"]["id"], f["teams"]["away"]["id"]
-        gh, ga = f["goals"]["home"], f["goals"]["away"]
-        raw.setdefault(h, [0, 0, 0, 0, 0, 0])
-        raw.setdefault(a, [0, 0, 0, 0, 0, 0])
-        raw[h][0] += gh; raw[h][1] += ga; raw[h][2] += 1
-        raw[a][3] += ga; raw[a][4] += gh; raw[a][5] += 1
-    gfd = sum(f["goals"]["home"] for f in train) / len(train)
-    gfe = sum(f["goals"]["away"] for f in train) / len(train)
-
-    def _raw_probs(h: int, a: int) -> dict | None:
-        if h not in raw or a not in raw:
-            return None
-        rh, ra = raw[h], raw[a]
-        att_h = rh[0] / rh[2] if rh[2] else gfd
-        def_a = ra[4] / ra[5] if ra[5] else gfe
-        att_a = ra[3] / ra[5] if ra[5] else gfe
-        def_h = rh[1] / rh[2] if rh[2] else gfd
-        lam_h = max((att_h + def_a) / 2, 0.15)
-        lam_a = max((att_a + def_h) / 2, 0.15)
-        from .poisson import compute_probabilities
-        p = compute_probabilities(lam_h, lam_a)
-        return {"1": p.home_win, "X": p.draw, "2": p.away_win}
-
-    s_raw = _stats_modele()
-    s_dc = _stats_modele()
-    s_elo = _stats_modele()
-    s_cons = _stats_modele()
-
-    # 4 — Walk-forward sur le jeu de test
-    for f in test:
-        h, a = f["teams"]["home"]["id"], f["teams"]["away"]["id"]
-        gh, ga = int(f["goals"]["home"]), int(f["goals"]["away"])
-        reel = "1" if gh > ga else ("X" if gh == ga else "2")
-
-        p_raw = _raw_probs(h, a)
-        p_dc = (modele.proba_1x2(h, a)
-                if modele and modele.connait(h) and modele.connait(a) else None)
-        rh = ratings.get(h, RATING_INITIAL)
-        ra = ratings.get(a, RATING_INITIAL)
-        p_elo = proba_1x2_elo(rh, ra)
-        p_cons = fusionner_1x2(p_dc, p_elo, None).get("probabilites")
-
-        _accumuler(s_raw, p_raw, reel)
-        _accumuler(s_dc, p_dc, reel)
-        _accumuler(s_elo, p_elo, reel)
-        _accumuler(s_cons, p_cons, reel)
-
-        # Mise à jour Elo APRÈS la prédiction (pas de fuite)
-        ratings[h], ratings[a] = maj_elo(rh, ra, gh, ga, k=K_DEFAUT_CLUB)
-
-    return {
-        "n_train": len(train),
-        "n_test": len(test),
-        "moyennes_brutes": _finaliser(s_raw),
-        "poisson_ajuste": _finaliser(s_dc),
-        "elo": _finaliser(s_elo),
-        "consensus": _finaliser(s_cons),
-    }
+    xg = xg_cache(rows)
+    stats = {k:_stats_modele() for k in ("moyennes_brutes","poisson_ajuste","elo","consensus")}
+    for f in rows[cut:]:
+        p = predire_historique(rows, f["teams"]["home"]["id"], f["teams"]["away"]["id"], f["fixture"]["date"], xg=xg)
+        if not p:
+            continue
+        gh,ga = f["goals"]["home"], f["goals"]["away"]
+        reel = "1" if gh>ga else "X" if gh==ga else "2"
+        for dest,source in (("moyennes_brutes","dynamique"),("poisson_ajuste","poisson"),("elo","elo")):
+            _accumuler(stats[dest], p.get(source), reel)
+        _accumuler(stats["consensus"],p["consensus"]["probabilites"],reel)
+    return {"n_train":cut,"n_test":stats["consensus"]["n"],**{k:_finaliser(v) for k,v in stats.items()}}
 
 
 def run_backtest(
@@ -228,12 +139,12 @@ def run_backtest(
     reponse = data.get("response", [])
 
     # Évaluation walk-forward du consensus (Poisson ajusté + Elo) sur cette saison
-    consensus_eval = evaluer_consensus(reponse)
+    comparaison = {k:_stats_modele() for k in ("moyennes_brutes","poisson_ajuste","elo","consensus")}
 
     fixtures: list[FixtureInfo] = []
     scores: dict[int, tuple[int, int]] = {}
 
-    for f in reponse:
+    for f in historique_90(reponse):
         status = f["fixture"]["status"]["short"]
         if status not in STATUTS_TERMINES:
             continue
@@ -282,14 +193,21 @@ def run_backtest(
     # Bins de calibration : proba prédite (favori) vs taux de réussite réel
     cal_bins = {i: {"n": 0, "ok": 0, "somme_proba": 0.0} for i in range(10)}
 
+    xg = xg_cache(reponse)
+    model = charger_modele(league_id)
     for fx in fixtures:
-        analyse = analyser_fixture_sans_cotes(api, fx, stats_season=season)
+        analyse = predire_historique(reponse, fx.home_id, fx.away_id, fx.date, model=model, xg=xg)
+        if analyse:
+            analyse["match"] = f"{fx.home_name} - {fx.away_name}"
         if not analyse:
             continue
 
         score_home, score_away = scores[fx.fixture_id]
         reel = _resultat_reel(score_home, score_away)
         probas = analyse["probabilites"]
+        for dest,source in (("moyennes_brutes","dynamique"),("poisson_ajuste","poisson"),("elo","elo")):
+            _accumuler(comparaison[dest], analyse.get(source), reel["1x2"])
+        _accumuler(comparaison["consensus"],analyse["consensus"]["probabilites"],reel["1x2"])
         total_buts = score_home + score_away
 
         # Calibration 1X2
@@ -390,7 +308,9 @@ def run_backtest(
         "log_loss": round(somme_logloss / total, 4) if total else None,
         "calibration": calibration,
         # Évaluation comparative du consensus (walk-forward, hors-échantillon)
-        "consensus_eval": consensus_eval,
+        "consensus_eval": {"n_train":0,"n_test":total,**{k:_finaliser(v) for k,v in comparaison.items()}},
+        "version_modele":"edge-90-v1",
+        "cadre":"reconstruction_chronologique_sans_cotes",
         # Over/Under 2.5 par direction
         "accuracy_over25":  pct(c["ok_over25"],  c["n_over25"]),
         "accuracy_under25": pct(c["ok_under25"], c["n_under25"]),

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Icon from "../components/Icon";
 import { ScoreMatch, ScoresJour, getScores } from "../lib/api";
 import { dateHeureCanada } from "../lib/date";
@@ -37,14 +38,14 @@ function StatusBadge({ status, elapsed }: { status: string; elapsed: number | nu
   return null;
 }
 
-function MatchCard({ m }: { m: ScoreMatch }) {
+function MatchCard({ m, href }: { m: ScoreMatch; href: string }) {
   const isLive = LIVE_ST.has(m.status);
   const isDone = DONE_ST.has(m.status);
   const hasScore = m.score.home !== null && m.score.away !== null;
 
   return (
     <Link
-      href={`/match/${m.fixture_id}`}
+      href={href}
       className={`flex items-center gap-sm px-md py-sm rounded-xl transition-all hover:bg-surface-container-high group ${
         isLive ? "border border-red-500/20 bg-red-500/5" : "border border-white/5"
       }`}
@@ -115,10 +116,10 @@ function jourCourt(iso: string) {
 }
 
 function LeagueGroup({
-  ligue, logo, flag, pays, matchs, collapsed, onToggle,
+  ligue, logo, flag, pays, matchs, collapsed, onToggle, matchHref,
 }: {
   ligue: string; logo?: string; flag?: string | null; pays?: string | null;
-  matchs: ScoreMatch[]; collapsed: boolean; onToggle: () => void;
+  matchs: ScoreMatch[]; collapsed: boolean; onToggle: () => void; matchHref: (fixtureId: number) => string;
 }) {
   return (
     <div className="mb-md">
@@ -136,7 +137,7 @@ function LeagueGroup({
       </button>
       {!collapsed && (
         <div className="flex flex-col gap-[3px]">
-          {matchs.map((m) => <MatchCard key={m.fixture_id} m={m} />)}
+          {matchs.map((m) => <MatchCard key={m.fixture_id} m={m} href={matchHref(m.fixture_id)} />)}
         </div>
       )}
     </div>
@@ -359,6 +360,7 @@ export default function ScoresPage() {
           matchs={g.matchs}
           collapsed={replies.has(g.ligue_id)}
           onToggle={() => toggleGroupe(g.ligue_id)}
+          matchHref={(fixtureId) => `/match/${fixtureId}`}
         />
       ))}
     </>

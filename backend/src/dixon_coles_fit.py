@@ -26,6 +26,7 @@ import numpy as np
 from scipy.optimize import minimize
 
 from .poisson import RHO_DIXON_COLES, compute_probabilities
+from .match_data import historique_90
 
 XI_DECAY = 0.003   # demi-vie ~230 j (cohérent avec team_stats)
 REG_L2 = 0.05      # régularisation -> shrinkage des équipes peu vues
@@ -95,7 +96,7 @@ def _parser_matchs(fixtures: list, ref: datetime, xi: float):
         return index[tid]
 
     hi, ai, gh, ga, w = [], [], [], [], []
-    for f in fixtures:
+    for f in historique_90(fixtures, ref):
         if f.get("fixture", {}).get("status", {}).get("short") not in ("FT", "AET", "PEN"):
             continue
         g_h = f.get("goals", {}).get("home")

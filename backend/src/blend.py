@@ -1,22 +1,12 @@
-"""Fusion des sources de probabilité (consensus statistique multi-modèles).
+"""Fusion des probabilités Poisson/Dixon-Coles, Elo, marché et ML optionnel.
 
-EDGE dispose de trois estimations indépendantes du 1X2 :
-  1. Poisson/Dixon-Coles sur les moyennes buts dom/ext (forme de marque).
-  2. Elo (force globale, corrige la force de calendrier).
-  3. Marché (closing line Pinnacle/consensus, vig retiré) — meilleur prédicteur connu.
-
-On les combine par POOL LOGARITHMIQUE (moyenne géométrique pondérée). La
-recherche (Ranjan & Gneiting, JRSS-B 2010) montre qu'une moyenne linéaire de
-prévisions calibrées est nécessairement décalibrée et trop molle ; le pool
-logarithmique minimise la divergence KL aux sources et préserve la netteté
-(externally Bayesian). Le marché, quand il est disponible, reçoit le poids le
-plus fort (dur à battre). En son absence, Elo et Poisson se partagent le poids.
-
-Le résultat sert d'ANCRE statistique. DeepSeek reste l'arbitre final : il voit
-les trois sources + le consensus, et peut s'en écarter s'il détecte un facteur
-qualitatif majeur (blessure clé, enjeu, météo).
+Les sources partagent certaines données : elles ne sont pas indépendantes.
+Le pool logarithmique utilise les poids existants ; il ne garantit ni une
+meilleure calibration ni une supériorité sur le marché. Ces propriétés doivent
+être mesurées hors échantillon. Les diagnostics décrivent le désaccord et la
+sensibilité, pas une probabilité de réussite supplémentaire.
 """
-from math import exp, log
+from math import exp, isfinite, log
 
 # Poids optimisés empiriquement (minimisation du log-loss sur 1669 matchs
 # walk-forward, toutes ligues club en cache). L'Elo s'est révélé plus fiable
@@ -29,6 +19,20 @@ POIDS_AVEC_MARCHE = {"marche": 0.50, "elo": 0.30, "poisson": 0.20}
 POIDS_SANS_MARCHE = {"elo": 0.70, "poisson": 0.30}
 
 CLES_1X2 = ("1", "X", "2")
+
+
+def valider_1x2(p: dict | None) -> dict[str, float] | None:
+    """Écarte les sources incomplètes, non numériques ou non probabilistes."""
+    if not isinstance(p, dict):
+        return None
+    values = [p.get(k) for k in CLES_1X2]
+    if any(isinstance(v, bool) or not isinstance(v, (int, float))
+           or not isfinite(v) or not 0 <= v <= 1 for v in values):
+        return None
+    total = sum(values)
+    if abs(total - 1.0) > 0.02:
+        return None
+    return {k: p[k] / total for k in CLES_1X2}
 
 
 def _normaliser(p: dict[str, float]) -> dict[str, float]:
@@ -109,6 +113,8 @@ def fusionner_1x2(
     elo: dict[str, float] | None,
     marche: dict[str, float] | None,
     ml: dict[str, float] | None = None,
+    autres: dict | None = None,
+    poids_config: dict | None = None,
 ) -> dict:
     """Combine les sources disponibles en un consensus 1X2 pondéré.
 
@@ -116,14 +122,10 @@ def fusionner_1x2(
     `accord` = écart max entre sources (faible = consensus fort).
     """
     sources = {}
-    if poisson:
-        sources["poisson"] = _normaliser(poisson)
-    if elo:
-        sources["elo"] = _normaliser(elo)
-    if marche:
-        sources["marche"] = _normaliser(marche)
-    if ml:
-        sources["ml"] = _normaliser(ml)
+    for nom, p in {"poisson": poisson, "elo": elo, "marche": marche, "ml": ml, **(autres or {})}.items():
+        valide = valider_1x2(p)
+        if valide is not None:
+            sources[nom] = valide
 
     if not sources:
         return {"probabilites": None, "poids_utilises": {},
@@ -147,6 +149,14 @@ def fusionner_1x2(
         else:
             poids = {"ml": 1.0}
 
+    if poids_config is not None:
+        poids = {s: max(float(poids_config.get(s, 0)), 0) for s in sources}
+        sources = {s: p for s, p in sources.items() if poids[s] > 1e-8}
+        if not sources:
+            return {"probabilites": None, "poids_utilises": {}, "sources_disponibles": [], "accord": None}
+        total = sum(poids[s] for s in sources)
+        poids = {s: poids[s]/total for s in sources}
+
     # Pool LOGARITHMIQUE : moyenne géométrique pondérée des probabilités.
     # consensus_k ∝ exp(Σ_s w_s · ln p_s,k). Préserve la netteté (contrairement
     # à la moyenne arithmétique qui lisse vers l'uniforme) et minimise la
@@ -158,16 +168,43 @@ def fusionner_1x2(
     }
     consensus = _normaliser(consensus)
 
-    # Mesure d'accord entre sources : écart max sur la proba de victoire dom
-    if len(sources) > 1:
-        vals = [sources[s]["1"] for s in sources]
-        accord = round(max(vals) - min(vals), 4)
-    else:
-        accord = 0.0
+    # Mesure les trois issues : un désaccord sur le nul ne doit pas disparaître.
+    plages = {
+        k: {"min": round(min(p[k] for p in sources.values()), 4),
+            "max": round(max(p[k] for p in sources.values()), 4)}
+        for k in CLES_1X2
+    }
+    accord = (round(max(v["max"] - v["min"] for v in plages.values()), 4)
+              if len(sources) > 1 else None)
+    favori = max(consensus, key=consensus.get)
+    # Sensibilité à une source : mêmes poids relatifs, une source retirée.
+    sensibilite = {}
+    for retiree in sources if len(sources) > 1 else []:
+        autres = [s for s in sources if s != retiree]
+        total = sum(poids[s] for s in autres)
+        sans = _normaliser({
+            k: exp(sum(poids[s] / total * log(max(sources[s][k], EPS)) for s in autres))
+            for k in CLES_1X2
+        })
+        sensibilite[retiree] = {
+            "probabilites": {k: round(v, 4) for k, v in sans.items()},
+            "ecart_max": round(max(abs(sans[k] - consensus[k]) for k in CLES_1X2), 4),
+            "favori_change": max(sans, key=sans.get) != favori,
+        }
 
+    arrondies = {k: round(v, 4) for k, v in consensus.items()}
+    arrondies[favori] = round(arrondies[favori] + 1 - sum(arrondies.values()), 4)
     return {
-        "probabilites": {k: round(v, 4) for k, v in consensus.items()},
+        "probabilites": arrondies,
         "poids_utilises": {s: round(w, 3) for s, w in poids.items()},
         "sources_disponibles": list(sources.keys()),
         "accord": accord,
+        "diagnostic": {
+            "plages": plages,
+            "sensibilite": sensibilite,
+            "favori_stable": (all(not s["favori_change"] for s in sensibilite.values())
+                              if sensibilite else None),
+            "note": "Les sources sont corrélées. Leur accord ne mesure pas la calibration. "
+                    "Les plages sont des écarts entre modèles, pas des intervalles de confiance.",
+        },
     }

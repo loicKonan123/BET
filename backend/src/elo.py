@@ -17,6 +17,7 @@ dans le moteur Poisson/Dixon-Coles existant : Elo et Poisson parlent enfin la
 même langue.
 """
 from math import log
+from .match_data import historique_90
 
 RATING_INITIAL = 1500.0       # note de départ d'une équipe inconnue
 HFA_DEFAULT = 65.0            # avantage du terrain en points Elo (~0.16 but)
@@ -127,7 +128,7 @@ def construire_ratings(fixtures_par_competition: list[tuple[int, list]]) -> dict
     # Aplatit en (date, league_id, match) puis trie par date croissante
     tous = []
     for league_id, fixtures in fixtures_par_competition:
-        for f in fixtures:
+        for f in historique_90(fixtures):
             if f.get("fixture", {}).get("status", {}).get("short") not in (
                 "FT", "AET", "PEN"
             ):

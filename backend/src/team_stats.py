@@ -162,6 +162,15 @@ def recuperer_stats_national(api: ApiFootball, team: int, derniers: int = 20) ->
     Le paramètre `last` est réservé aux plans payants (PRO). Donne la forme
     internationale la plus à jour (qualifs, Nations League, amicaux).
     """
+    return recuperer_stats_recentes(api, team, derniers)
+
+
+def recuperer_stats_recentes(api: ApiFootball, team: int, derniers: int = 20) -> StatsEquipe | None:
+    """Calcule les stats d'une equipe depuis ses derniers matchs termines.
+
+    Sert de filet de securite quand une saison vient de commencer et que
+    `teams/statistics` n'a pas encore assez de matchs dans la ligue courante.
+    """
     data = api.get("fixtures", {"team": team, "last": derniers})
     return parser_stats_national(data.get("response", []), team)
 

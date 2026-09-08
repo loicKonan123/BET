@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Selection } from "./api";
+import { coteDisponible } from "./cotes";
 
 const KEY = "edge_ticket_builder";
 
@@ -17,7 +18,12 @@ export function useTicketBuilder() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(KEY);
-      if (raw) setPicks(JSON.parse(raw));
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const valid = Array.isArray(parsed) ? parsed.filter(p => p && coteDisponible(p.cote)) : [];
+        setPicks(valid);
+        localStorage.setItem(KEY, JSON.stringify(valid));
+      }
     } catch {}
   }, []);
 
@@ -27,6 +33,7 @@ export function useTicketBuilder() {
   };
 
   const add = useCallback((sel: PickSelection) => {
+    if (!coteDisponible(sel.cote)) return;
     setPicks((prev) => {
       // Un seul pari par match
       if (prev.some((p) => p.fixture_id === sel.fixture_id && p.cle === sel.cle)) return prev;

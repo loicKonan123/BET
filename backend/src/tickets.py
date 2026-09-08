@@ -14,6 +14,7 @@ Les sélections retenues sont triées par probabilité décroissante et regroup�
 en tickets : le ticket #1 réunit les paris les plus sûrs.
 """
 import logging
+from math import isfinite
 
 from .combines import Combine, Selection
 
@@ -43,12 +44,14 @@ def selection_confiance(consensus: dict[str, float], cotes: dict[str, float],
     cX = consensus.get("X", 0.0)
     c2 = consensus.get("2", 0.0)
 
-    cle, p = max((("1", c1), ("X", cX), ("2", c2)), key=lambda kv: kv[1])
+    disponible = lambda k: isinstance(cotes.get(k), (int, float)) and isfinite(cotes[k]) and cotes[k] > 1
+    simples = [(k, p) for k, p in (("1", c1), ("X", cX), ("2", c2)) if disponible(k)]
+    cle, p = max(simples, key=lambda kv: kv[1], default=("", 0))
     if p >= seuil_simple:
         return cle, p
 
     dc = {"1X": c1 + cX, "12": c1 + c2, "X2": cX + c2}
-    cle_dc, p_dc = max(dc.items(), key=lambda kv: kv[1])
+    cle_dc, p_dc = max(((k, p) for k, p in dc.items() if disponible(k)), key=lambda kv: kv[1], default=("", 0))
     if p_dc >= seuil_double:
         return cle_dc, p_dc
 

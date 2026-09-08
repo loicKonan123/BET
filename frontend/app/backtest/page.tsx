@@ -58,10 +58,10 @@ function AccuracyCard({
 // Tableau comparatif des modèles évalués en walk-forward (hors-échantillon).
 function ConsensusCompare({ ev }: { ev: ConsensusEval }) {
   const lignes: { cle: keyof ConsensusEval; label: string; tag?: string }[] = [
-    { cle: "moyennes_brutes", label: "Moyennes brutes", tag: "ancien" },
+    { cle: "moyennes_brutes", label: "Poisson bivarié dynamique", tag: "comparaison" },
     { cle: "poisson_ajuste", label: "Poisson ajusté (MLE)" },
     { cle: "elo", label: "Elo (force globale)" },
-    { cle: "consensus", label: "Consensus", tag: "servi" },
+    { cle: "consensus", label: "EDGE à 90 minutes", tag: "reconstruction" },
   ];
   const modeles = lignes
     .map((l) => ({ ...l, m: ev[l.cle] as ModeleEval | null }))
@@ -77,8 +77,8 @@ function ConsensusCompare({ ev }: { ev: ConsensusEval }) {
         Comparatif des modèles — hors-échantillon
       </p>
       <p className="text-xs text-on-surface-variant/70 mb-md">
-        Entraîné sur {ev.n_train} matchs, testé sur {ev.n_test} matchs jamais vus (walk-forward, aucune fuite).
-        Le log-loss mesure la calibration : plus bas = mieux.
+        {ev.n_test} matchs reconstruits chronologiquement avec l’historique disponible avant chaque coup d’envoi.
+        Scores à 90 minutes, sans cotes historiques. Le log-loss évalue la qualité des probabilités : plus bas = mieux.
       </p>
       <div className="bg-surface-container-high rounded-xl overflow-hidden">
         <div className="grid grid-cols-[1.6fr_1fr_1fr_1fr] gap-sm px-md py-sm text-xs text-on-surface-variant/70 border-b border-white/10">

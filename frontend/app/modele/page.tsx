@@ -50,13 +50,19 @@ export default function ModelePage() {
           <Icon name="smart_toy" className="text-primary" /> Étude du modèle
         </h1>
         <p className="text-sm text-on-surface-variant mt-xs max-w-2xl">
-          Le 4e coéquipier : un modèle d&apos;apprentissage qui juge les équipes sur la qualité
-          de leur jeu (xG) et pas seulement sur leurs résultats. Voici sa performance réelle,
-          mesurée sur des matchs jamais vus à l&apos;entraînement.
+          Le moteur EDGE combine plusieurs sources selon leur validation chronologique.
+          Cette page compare sa composante ML à Elo et indique les poids réellement déployés.
         </p>
       </div>
 
       {/* Sélecteur de ligue */}
+      {data?.prospectif && (
+        <p className="text-sm text-on-surface-variant mb-lg">
+          Suivi prospectif, toutes ligues : {data.prospectif.matchs_archives} matchs archivés avant le coup d’envoi,
+          {" "}{data.prospectif.matchs_evalues} résultats évalués à 90 minutes.
+          {data.prospectif.metriques && ` Log-loss : ${data.prospectif.metriques.log_loss}.`}
+        </p>
+      )}
       <div className="flex gap-xs mb-xl overflow-x-auto pb-xs">
         {LIGUES.map((l) => (
           <button
@@ -93,7 +99,7 @@ export default function ModelePage() {
               <span className="font-headline-sm text-headline-sm text-on-surface">
                 {gainLL > 0
                   ? "Le modèle ML bat la référence Elo"
-                  : "Le modèle ML est au niveau de l'Elo"}
+                  : gainLL < 0 ? "Elo devance le modèle ML sur cette période" : "ML et Elo sont au même niveau sur cette période"}
               </span>
             </div>
             <p className="text-sm text-on-surface-variant">
@@ -104,6 +110,15 @@ export default function ModelePage() {
           </div>
 
           {/* Comparaison ML vs Elo */}
+          {e.validation && (
+            <div className="glass-card p-lg text-sm text-on-surface-variant space-y-sm">
+              <p className="font-semibold text-on-surface">Moteur commun {e.version_modele}</p>
+              <p>{e.validation.fusion_retenue ? "Fusion enrichie activée pour cette ligue." : "Fusion de référence conservée : les sources supplémentaires restent en comparaison."}</p>
+              <p>Calibration : {e.validation.n_calibration} matchs. Ajustement des poids : {e.validation.n_fusion} matchs.</p>
+              <p>{e.validation.note}</p>
+              <p>Poids sans marché : {Object.entries(e.poids ?? {}).filter(([, w]) => w > 0.001).map(([name, w]) => `${name} ${Math.round(w * 100)} %`).join(" · ")}</p>
+            </div>
+          )}
           <div>
             <p className="text-xs uppercase tracking-[0.15em] font-semibold text-on-surface-variant mb-md">
               Performance hors-échantillon

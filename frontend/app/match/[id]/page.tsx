@@ -12,6 +12,7 @@ import {
 import { useLiveScore } from "../../hooks/useLiveScore";
 import { dateHeureCanada } from "../../lib/date";
 import { useTicketBuilder } from "../../lib/useTicketBuilder";
+import { coteDisponible } from "../../lib/cotes";
 
 // ─── utilitaires ──────────────────────────────────────────────
 function pct(x: number) { return `${Math.round(x * 100)}%`; }
@@ -62,6 +63,9 @@ function MiniStat({ label, value, color }: { label: string; value: string; color
 
 // Libellés et couleurs des sources de modèle
 const SOURCE_META: Record<string, { label: string; icon: string }> = {
+  dynamique: { label: "Poisson bivarié dynamique", icon: "trending_up" },
+  contextuel: { label: "Contexte : repos et calendrier", icon: "event" },
+  xg_simple: { label: "xG récents", icon: "sports_soccer" },
   poisson:   { label: "Poisson / Dixon-Coles", icon: "functions" },
   elo:       { label: "Elo (force globale)",   icon: "military_tech" },
   marche:    { label: "Marché (sans marge)",   icon: "storefront" },
@@ -83,14 +87,16 @@ function BarreProba({ p, fort }: { p: { "1": number; "X": number; "2": number };
 
 function ConsensusCard({ mm, home, away }: { mm: MultiModeles; home: string; away: string }) {
   const cons = mm.consensus.probabilites!;
-  const accord = mm.consensus.accord ?? 0;
-  const convergence = accord <= 0.08 ? { txt: "Les modèles sont d'accord", cls: "text-primary", icon: "check_circle" }
+  const accord = mm.consensus.accord;
+  const convergence = accord == null ? { txt: "Convergence non mesurable", cls: "text-on-surface-variant", icon: "info" }
+    : accord <= 0.08 ? { txt: "Les modèles sont proches", cls: "text-primary", icon: "check_circle" }
     : accord <= 0.15 ? { txt: "Accord modéré", cls: "text-tertiary", icon: "remove" }
     : { txt: "Les modèles divergent", cls: "text-tertiary", icon: "info" };
-  const sources: Array<["poisson" | "elo" | "marche" | "ml", typeof mm.poisson]> = [
+  const sources: Array<[string, typeof mm.poisson]> = [
     ["poisson", mm.poisson], ["elo", mm.elo], ["marche", mm.marche], ["ml", mm.ml ?? null],
+    ["dynamique", mm.dynamique ?? null], ["contextuel", mm.contextuel ?? null], ["xg_simple", mm.xg_simple ?? null],
   ];
-  const nbSources = sources.filter(([, p]) => p).length;
+  const nbSources = Object.values(mm.consensus.poids_utilises).filter(w => w > 0).length;
 
   // Verdict en clair : l'issue la plus probable du consensus
   const issues = [
@@ -116,7 +122,7 @@ function ConsensusCard({ mm, home, away }: { mm: MultiModeles; home: string; awa
         <div className="flex items-center gap-sm">
           <Icon name="hub" className="text-primary" style={{ fontSize: 20 }} />
           <span className="text-xs uppercase tracking-[0.15em] font-semibold text-on-surface-variant">
-            Consensus de {nbSources} modèles
+            EDGE · 90 minutes · {nbSources} sources actives
           </span>
         </div>
         <span className={`flex items-center gap-xs text-[11px] font-medium ${convergence.cls}`}>
@@ -151,6 +157,12 @@ function ConsensusCard({ mm, home, away }: { mm: MultiModeles; home: string; awa
       </div>
 
       {/* Détail par modèle */}
+      <p className="text-xs text-on-surface-variant">
+        {mm.modele_entraine
+          ? `Fusion ${mm.validation?.fusion_retenue ? "enrichie retenue" : "de référence conservée"} après validation sur ${mm.validation?.n_test ?? 0} matchs. Confirmation prospective en cours.`
+          : "Historique insuffisant pour déployer la fusion entraînée à cette date : moteur de référence actif."}
+        {mm.provenance_cotes?.bookmaker && ` Cotes : ${mm.provenance_cotes.bookmaker}.`}
+      </p>
       <div className="flex flex-col gap-md pt-md border-t border-white/10">
         <span className="text-[11px] uppercase tracking-wider text-on-surface-variant/60">
           Avis de chaque modèle
@@ -162,17 +174,38 @@ function ConsensusCard({ mm, home, away }: { mm: MultiModeles; home: string; awa
                 <Icon name={SOURCE_META[key].icon} style={{ fontSize: 15 }} />
                 {SOURCE_META[key].label}
               </span>
-              {mm.consensus.poids_utilises[key] != null && (
+              {mm.consensus.poids_utilises[key] != null ? (
                 <span className="text-[11px] text-on-surface-variant/60">
                   pèse {Math.round(mm.consensus.poids_utilises[key] * 100)}%
                 </span>
-              )}
+              ) : <span className="text-[11px] text-on-surface-variant/60">Comparaison · poids nul</span>}
             </div>
             <BarreProba p={p} />
             <Valeurs p={p} />
           </div>
         ))}
       </div>
+
+      {mm.consensus.diagnostic && (
+        <div className="rounded-lg bg-white/5 p-md text-sm text-on-surface-variant space-y-sm">
+          <p className="font-semibold text-on-surface">Solidité du consensus</p>
+          {accord != null && <p>Écart maximal entre les sources : {(accord * 100).toFixed(1)} points de probabilité, sur les trois issues.</p>}
+          {mm.consensus.diagnostic.favori_stable != null && (
+            <p>{mm.consensus.diagnostic.favori_stable
+              ? "Le favori reste le même lorsqu’on retire une source à la fois."
+              : "Le favori change lorsqu’on retire certaines sources : la conclusion est sensible au modèle retenu."}</p>
+          )}
+          <details>
+            <summary className="cursor-pointer">Voir l’influence de chaque source</summary>
+            <ul className="mt-sm space-y-xs">
+              {Object.entries(mm.consensus.diagnostic.sensibilite).map(([source, test]) => (
+                <li key={source}>Sans {SOURCE_META[source]?.label ?? source} : variation maximale de {(test.ecart_max * 100).toFixed(1)} points{test.favori_change ? ", favori différent" : ""}.</li>
+              ))}
+            </ul>
+          </details>
+          <p className="text-xs opacity-70">{mm.consensus.diagnostic.note}</p>
+        </div>
+      )}
 
       {mm.elo_info && (
         <div className="flex items-center gap-sm text-[11px] text-on-surface-variant/60 pt-sm border-t border-white/10">
@@ -219,6 +252,55 @@ function H2HLigne({ h, homeId }: { h: H2HMatch; homeId: number }) {
         <span className="font-label-sm text-label-sm text-on-surface-variant">{dateHeureCanada(h.date)}</span>
       </div>
       <span className="font-mono font-bold text-on-surface font-label-md flex-shrink-0">{h.score}</span>
+    </div>
+  );
+}
+
+function AnalyseDetaillee({ ia }: { ia: AnalyseIA }) {
+  const blocs = [
+    { key: "lecture_match", titre: "Lecture du match", icon: "sports_soccer" },
+    { key: "duel_tactique", titre: "Les clés du duel", icon: "sports_soccer" },
+    { key: "signaux_statistiques", titre: "Ce que disent les modèles", icon: "query_stats" },
+    { key: "scenario_alternatif", titre: "Ce qui pourrait faire basculer le match", icon: "alt_route" },
+    { key: "marche_value", titre: "Le favori vaut-il sa cote ?", icon: "monitoring" },
+    { key: "risques", titre: "Les réserves de l’analyse", icon: "warning" },
+    { key: "verdict", titre: "Verdict", icon: "gavel" },
+  ] as const;
+  const detail = ia.analyse_detaillee;
+  const hasDetail = detail && blocs.some((b) => detail[b.key]);
+
+  return (
+    <div className="flex flex-col gap-md">
+      {ia.analyse && (
+        <div className="bg-white/5 border border-white/10 rounded-lg p-md">
+          <div className="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant mb-xs">
+            La lecture EDGE
+          </div>
+          <p className="font-body-lg text-body-lg text-on-surface leading-relaxed whitespace-pre-line">
+            {ia.analyse}
+          </p>
+        </div>
+      )}
+
+      {hasDetail && (
+        <article className="flex flex-col gap-lg max-w-prose mx-auto w-full">
+          {blocs.map((b) => {
+            const texte = detail?.[b.key];
+            if (!texte) return null;
+            return (
+              <section key={b.key} className="border-b border-white/10 pb-lg last:border-0">
+                <div className="flex items-center gap-xs font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant mb-xs">
+                  <Icon name={b.icon} style={{ fontSize: 15 }} />
+                  {b.titre}
+                </div>
+                <p className="font-body-md text-body-md text-on-surface leading-relaxed whitespace-pre-line">
+                  {texte}
+                </p>
+              </section>
+            );
+          })}
+        </article>
+      )}
     </div>
   );
 }
@@ -274,7 +356,10 @@ export default function MatchPage() {
   const [m, setM]           = useState<MatchDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [erreur, setErreur]   = useState<string | null>(null);
-  const [ia, setIa]           = useState<AnalyseIA | null>(null);
+  const [iaSnapshot, setIa]   = useState<AnalyseIA | null>(null);
+  const memeVerdict = iaSnapshot?.probabilites_finales && m?.multi_modeles?.consensus.probabilites &&
+    (["1", "X", "2"] as const).every(k => iaSnapshot.probabilites_finales?.[k] === m.multi_modeles?.consensus.probabilites?.[k]);
+  const ia = iaSnapshot?.prediction_id === m?.prediction_id || memeVerdict ? iaSnapshot : null;
   const [iaLoading, setIaLoading] = useState(false);
   const [iaErreur, setIaErreur]   = useState<string | null>(null);
   const [tabClassement, setTabClassement] = useState(0);
@@ -310,19 +395,22 @@ export default function MatchPage() {
   // (aucun appel DeepSeek). Sinon le bouton reste pour la lancer à la demande.
   useEffect(() => {
     if (!id) return;
-    getAnalyseIA(id, false, true)
+    getAnalyseIA(id, false, true, m?.prediction_id)
       .then((d) => {
         if (!d.cache_absent && !d.erreur) setIa(d);
       })
       .catch(() => { /* silencieux : le bouton prend le relais */ });
-  }, [id]);
+  }, [id, m?.prediction_id]);
 
   async function demanderIA(force = false) {
     setIaLoading(true); setIaErreur(null);
     try {
-      const d = await getAnalyseIA(id, force);
+      const d = await getAnalyseIA(id, force, false, m?.prediction_id);
       if (d.erreur) setIaErreur(d.erreur);
-      else if (!d.cache_absent) setIa(d);
+      else if (!d.cache_absent) {
+        setM(await getMatch(id));
+        setIa(d);
+      }
     } catch (e) {
       setIaErreur(e instanceof Error ? e.message : "Erreur réseau");
     } finally {
@@ -530,6 +618,8 @@ export default function MatchPage() {
                         <span className="pl-sm" />
                       </div>
                       {m.selections.map((s) => {
+                        const cote = coteDisponible(s.cote) ? s.cote : null;
+                        const value = cote !== null && Number.isFinite(s.value) ? s.value : null;
                         const inPicks = picks.some((p) => p.fixture_id === m.fixture_id && p.cle === s.cle);
                         const isConseil = m.conseil?.marche === s.marche;
                         return (
@@ -544,16 +634,19 @@ export default function MatchPage() {
                               {s.marche}
                             </span>
                             <span className="text-right pl-md text-secondary">{pct(s.proba)}</span>
-                            <span className="text-right pl-md text-on-surface-variant">{s.cote.toFixed(2)}</span>
-                            <span className={`text-right pl-md font-bold ${s.value >= 0 ? "text-primary" : "text-error"}`}>
-                              {s.value >= 0 ? "+" : ""}{Math.round(s.value * 100)}%
+                            <span className="text-right pl-md text-on-surface-variant" title={cote === null ? "Cote indisponible" : undefined}>{cote !== null ? cote.toFixed(2) : "—"}</span>
+                            <span className={`text-right pl-md font-bold ${value === null ? "text-on-surface-variant" : value >= 0 ? "text-primary" : "text-error"}`}>
+                              {value !== null ? `${value >= 0 ? "+" : ""}${Math.round(value * 100)}%` : "—"}
                             </span>
                             <button
-                              onClick={() => inPicks
-                                ? remove(m.fixture_id, s.cle)
-                                : add({ match: m.match, ligue: m.ligue, marche: s.marche, cote: s.cote, proba: s.proba, fixture_id: m.fixture_id, cle: s.cle, match_date: m.date ?? "" })
-                              }
-                              className={`ml-sm w-6 h-6 rounded flex items-center justify-center transition-all flex-shrink-0 ${inPicks ? "bg-primary text-on-primary" : "bg-white/10 hover:bg-primary/30 text-on-surface-variant"}`}
+                              disabled={!inPicks && cote === null}
+                              title={inPicks ? "Retirer du ticket" : cote === null ? "Cote indisponible" : "Ajouter au ticket"}
+                              aria-label={inPicks ? "Retirer du ticket" : cote === null ? "Cote indisponible" : "Ajouter au ticket"}
+                              onClick={() => {
+                                if (inPicks) remove(m.fixture_id, s.cle);
+                                else if (cote !== null) add({ match: m.match, ligue: m.ligue, marche: s.marche, cote, proba: s.proba, fixture_id: m.fixture_id, cle: s.cle, match_date: m.date ?? "" });
+                              }}
+                              className={`ml-sm w-6 h-6 rounded flex items-center justify-center transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${inPicks ? "bg-primary text-on-primary" : "bg-white/10 hover:bg-primary/30 text-on-surface-variant"}`}
                             >
                               <Icon name={inPicks ? "check" : "add"} style={{ fontSize: 14 }} />
                             </button>
@@ -602,7 +695,7 @@ export default function MatchPage() {
                 {iaErreur && <p className="text-error font-body-md">Erreur : {iaErreur}</p>}
                 {!ia && !iaLoading && !iaErreur && (
                   <p className="font-body-md text-body-md text-on-surface-variant">
-                    L'IA analyse tout : Poisson, forme dom/ext, H2H, blessures, contexte tournoi — et produit sa propre prédiction (~20s).
+                    L’IA explique le verdict EDGE avec les arguments football disponibles : forme, calendrier, confrontations et effectifs. Les probabilités restent celles du moteur commun.
                   </p>
                 )}
                 {iaLoading && (
@@ -672,7 +765,7 @@ export default function MatchPage() {
                     })()}
 
                     {/* Analyse narrative */}
-                    <p className="font-body-lg text-body-lg text-on-surface">{ia.analyse}</p>
+                    <AnalyseDetaillee ia={ia} />
 
                     {/* Points clés */}
                     {ia.points_cles?.length > 0 && (
@@ -718,7 +811,7 @@ export default function MatchPage() {
                     {/* Référence Poisson (secondaire) */}
                     {m?.probabilites && (
                       <div className="border-t border-white/10 pt-md">
-                        <div className="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant/60 mb-xs">Référence statistique (Poisson)</div>
+                        <div className="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant/60 mb-xs">Verdict du moteur EDGE</div>
                         <div className="flex gap-md font-body-sm text-body-sm text-on-surface-variant/60">
                           <span>Dom. {pct(m.probabilites["1"] ?? 0)}</span>
                           <span>Nul {pct(m.probabilites["X"] ?? 0)}</span>

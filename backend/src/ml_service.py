@@ -15,6 +15,7 @@ from pathlib import Path
 
 from .api_client import BACKEND_DIR, ApiFootball
 from .ml import ModeleML, entrainer, evaluer_ml, extraire_xg
+from .match_data import MODEL_VERSION
 
 log = logging.getLogger("edge.ml")
 
@@ -111,6 +112,8 @@ def modele_club_si_pret(league_id: int) -> ModeleML | None:
     if chemin.exists():
         try:
             modele = pickle.loads(chemin.read_bytes())
+            if getattr(modele, "version", None) != MODEL_VERSION:
+                return None  # Ancienne cible/calibration : réentraînement requis.
             _CACHE[f"club:{league_id}"] = (time.time(), modele)
             return modele
         except Exception as e:

@@ -12,10 +12,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from .api_client import ApiFootball
 from .combines import Selection, generer_combines
-from .odds_parser import recuperer_cotes
+from .odds_parser import recuperer_prix
 from .ligues_mise_o_jeu import LIGUES_SOCCER
 from .poisson import compute_probabilities
-from .team_stats import buts_attendus, recuperer_stats, recuperer_stats_national
+from .prediction_service import predire_match
+from .blend import conseil_consensus
+from .team_stats import (
+    buts_attendus,
+    recuperer_stats,
+    recuperer_stats_national,
+    recuperer_stats_recentes,
+)
 
 
 def _nom_ligue(league_id: int) -> str:
@@ -40,11 +47,26 @@ LIGUES_NATIONALES = {
 }
 
 
-def _stats_equipe(api, league, season, team_id, mode):
+def _stats_equipe(api, league, season, team_id, mode, allow_fallback: bool = True):
     """Récupère les stats d'une équipe selon le mode (club ou national)."""
     if mode == "national":
         return recuperer_stats_national(api, team_id)
-    return recuperer_stats(api, league, season, team_id)
+
+    courant = recuperer_stats(api, league, season, team_id)
+    if courant and (courant.fiable or not allow_fallback):
+        return courant
+
+    precedent = None
+    if allow_fallback and season:
+        precedent = recuperer_stats(api, league, season - 1, team_id)
+        if precedent and precedent.fiable:
+            return precedent
+
+    recent = recuperer_stats_recentes(api, team_id) if allow_fallback else None
+    if recent and recent.fiable:
+        return recent
+
+    return courant or precedent or recent
 
 
 def _mode_pour_ligue(league_id: int) -> str:
@@ -63,6 +85,40 @@ LIBELLES = {
     "12": "Pas de match nul (double chance)",
     "X2": "Extérieur ou nul (double chance)",
 }
+
+
+def _analyser_commun(api, fx, stats_season=None):
+    """Source unique : mêmes cotes, grille, probabilités et identifiant partout."""
+    from dataclasses import replace
+    target = replace(fx, season=stats_season) if stats_season else fx
+    cotes = {}
+    provenance = None
+    if fx.status in ("NS", "TBD"):
+        try:
+            cotes, provenance = recuperer_prix(api, fx.fixture_id)
+        except Exception:
+            pass
+    prediction = predire_match(api, target, cotes, provenance)
+    if prediction is None:
+        return None
+    probas = prediction["probabilites"]
+    selections = []
+    for cle,p in probas.items():
+        cote = prediction["cotes"].get(cle)
+        selections.append({"cle":cle,"marche":LIBELLES.get(cle,cle),"proba":p,
+                           "cote":cote,"proba_implicite":round(1/cote,4) if cote else None,
+                           "value":round(p*cote-1,4) if cote else 0.0,
+                           "est_value_bet":bool(cote and p*cote>1),"fixture_id":fx.fixture_id,
+                           "prediction_id":prediction["prediction_id"]})
+    return {"match":f"{fx.home_name} - {fx.away_name}","ligue":_nom_ligue(fx.league),
+            "fixture_id":fx.fixture_id,"date":fx.date,"status":fx.status,"score":_score(fx),
+            "buts_attendus":prediction["buts_attendus"],"forme":prediction["forme"],
+            "probabilites":probas,"consensus":prediction["consensus"]["probabilites"],
+            "sources_consensus":prediction["consensus"]["sources_disponibles"],
+            "selections":selections,"marches":selections,"multi_modeles":prediction,
+            "conseil":conseil_consensus(prediction["consensus"]["probabilites"],prediction["cotes"]),
+            "prediction_id":prediction["prediction_id"],"version_modele":prediction["version_modele"],
+            "cadre_prediction":prediction["cadre"],"calcule_le":prediction["calcule_le"]}
 
 
 @dataclass
@@ -122,100 +178,13 @@ def fixtures_depuis_reponse(
     return out
 
 
-def analyser_fixture(
-    api: ApiFootball,
-    fx: FixtureInfo,
-    stats_season: int | None = None,
-) -> dict | None:
-    """Analyse un match : renvoie un dict structuré, ou None si données manquantes.
-
-    stats_season : saison à utiliser pour les stats. None => saison du match.
-    (Sur le plan gratuit on met 2024 ; avec une clé prod on laisse None.)
-    """
-    mode = _mode_pour_ligue(fx.league)
-    saison_stats = stats_season or fx.season
-    dom = _stats_equipe(api, fx.league, saison_stats, fx.home_id, mode)
-    ext = _stats_equipe(api, fx.league, saison_stats, fx.away_id, mode)
-    if not dom or not ext or not dom.fiable or not ext.fiable:
-        return None
-
-    lam_dom, lam_ext = buts_attendus(dom, ext)
-    proba = compute_probabilities(lam_dom, lam_ext)
-    probas = proba.as_market_dict()
-
-    cotes = recuperer_cotes(api, fx.fixture_id)
-    if not cotes:
-        return None
-
-    match_label = f"{fx.home_name} - {fx.away_name}"
-    selections = []
-    for cle, cote in cotes.items():
-        p = probas.get(cle)
-        if p is None:
-            continue
-        sel = Selection(match=match_label, marche=LIBELLES.get(cle, cle), proba=p, cote=cote)
-        selections.append({
-            "cle": cle,
-            "marche": sel.marche,
-            "proba": round(p, 4),
-            "cote": cote,
-            "proba_implicite": round(sel.proba_implicite, 4),
-            "value": round(sel.value, 4),
-            "est_value_bet": sel.est_value_bet,
-            "fixture_id": fx.fixture_id,
-        })
-
-    return {
-        "match": match_label,
-        "ligue": _nom_ligue(fx.league),
-        "fixture_id": fx.fixture_id,
-        "date": fx.date,
-        "status": fx.status,
-        "score": _score(fx),
-        "buts_attendus": {"domicile": round(lam_dom, 2), "exterieur": round(lam_ext, 2)},
-        "forme": {"domicile": dom.forme[-5:], "exterieur": ext.forme[-5:]},
-        "probabilites": {k: round(v, 4) for k, v in probas.items()},
-        "selections": selections,
-    }
+def analyser_fixture(api, fx, stats_season=None):
+    return _analyser_commun(api, fx, stats_season)
 
 
-def analyser_fixture_sans_cotes(
-    api: ApiFootball,
-    fx: FixtureInfo,
-    stats_season: int | None = None,
-) -> dict | None:
-    """Comme analyser_fixture mais SANS cotes : renvoie les probas par marché.
-
-    Sert au mode saisie manuelle : on calcule TA proba, tu fournis la cote
-    Mise-o-jeu toi-même côté interface.
-    """
-    mode = _mode_pour_ligue(fx.league)
-    saison_stats = stats_season or fx.season
-    dom = _stats_equipe(api, fx.league, saison_stats, fx.home_id, mode)
-    ext = _stats_equipe(api, fx.league, saison_stats, fx.away_id, mode)
-    if not dom or not ext or not dom.fiable or not ext.fiable:
-        return None
-
-    lam_dom, lam_ext = buts_attendus(dom, ext)
-    probas = compute_probabilities(lam_dom, lam_ext).as_market_dict()
-
-    match_label = f"{fx.home_name} - {fx.away_name}"
-    marches = [
-        {"cle": cle, "marche": LIBELLES.get(cle, cle), "proba": round(p, 4)}
-        for cle, p in probas.items()
-    ]
-    return {
-        "match": match_label,
-        "ligue": _nom_ligue(fx.league),
-        "fixture_id": fx.fixture_id,
-        "date": fx.date,
-        "status": fx.status,
-        "score": _score(fx),
-        "buts_attendus": {"domicile": round(lam_dom, 2), "exterieur": round(lam_ext, 2)},
-        "forme": {"domicile": dom.forme[-5:], "exterieur": ext.forme[-5:]},
-        "probabilites": {k: round(v, 4) for k, v in probas.items()},
-        "marches": marches,
-    }
+def analyser_fixture_sans_cotes(api, fx, stats_season=None):
+    # Alias conserve pour les clients existants : prediction canonique identique.
+    return _analyser_commun(api, fx, stats_season)
 
 
 def conseil_de_paris(selections: list[dict]) -> dict | None:
@@ -290,8 +259,10 @@ def _selections_objets(analyses: list[dict], value_min: float) -> list[Selection
     """Reconstruit des objets Selection (value bets uniquement) pour les combinés."""
     out = []
     for a in analyses:
+        if a.get("cadre_prediction") != "avant_match":
+            continue
         for s in a["selections"]:
-            if s["value"] > value_min:
+            if s.get("cote") and s["cote"] > 1 and s["value"] > value_min:
                 out.append(Selection(
                     match=a["match"], marche=s["marche"],
                     proba=s["proba"], cote=s["cote"],
@@ -299,6 +270,7 @@ def _selections_objets(analyses: list[dict], value_min: float) -> list[Selection
                     fixture_id=s.get("fixture_id", a.get("fixture_id", 0)),
                     cle=s.get("cle", ""),
                     match_date=s.get("match_date", a.get("date", "")),
+                    prediction_id=a.get("prediction_id", ""), version_modele=a.get("version_modele", ""),
                 ))
     return out
 
@@ -341,7 +313,7 @@ def generer_pronostics(
                 {"match": s.match, "ligue": s.ligue, "marche": s.marche,
                  "cote": s.cote, "proba": round(s.proba, 4),
                  "fixture_id": s.fixture_id, "cle": s.cle,
-                 "match_date": s.match_date}
+                 "match_date": s.match_date, "prediction_id":s.prediction_id, "version_modele":s.version_modele}
                 for s in c.selections
             ],
         })

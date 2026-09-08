@@ -1,20 +1,7 @@
-"""4e coéquipier : modèle ML (gradient boosting) sur features enrichies xG.
+"""Outils ML historiques et metriques partages.
 
-L'apport décisif vs Elo/Poisson : le **xG** (expected goals) mesure la QUALITÉ
-de jeu indépendamment du résultat — une équipe peut gagner avec un faible xG
-(chance) ou perdre avec un fort xG. Le xG glissant prédit mieux le futur que les
-seuls scores. C'est le signal que les autres modèles ne captent pas.
-
-Features (toutes PRÉ-MATCH, anti-fuite) :
-  - écart Elo, Elo dom/ext
-  - xG glissant créé/concédé (dom et ext), différentiels xG croisés
-  - forme buts marqués/encaissés glissante
-
-Le modèle est un HistGradientBoostingClassifier (scikit-learn, aucune dépendance
-nouvelle) calibré par régression isotonique. Entraîné par ligue sur l'historique
-en cache, validé en walk-forward, il s'ajoute au consensus comme 4e source.
-
-Validé (EPL 2023+2024, walk-forward) : log-loss 0.995 vs 1.006 pour l'Elo seul.
+Le moteur deploye est prediction_models.Ensemble ; calibration chronologique
+par temperature, sans regression isotonique aleatoire.
 """
 from collections import defaultdict, deque
 from datetime import datetime
@@ -22,6 +9,8 @@ from datetime import datetime
 import numpy as np
 
 from .elo import RATING_INITIAL, K_DEFAUT_CLUB, HFA_DEFAULT, maj_elo
+from .match_data import MODEL_VERSION, historique_90
+from .calibration import ajuster_calibre
 
 K_FENETRE = 6      # taille de la fenêtre glissante
 MIN_HIST = 4       # min de matchs passés par équipe pour une prédiction fiable
@@ -81,7 +70,7 @@ def _rejouer(fixtures: list, xg_par_fixture: dict[int, dict]) -> tuple[dict[int,
     Renvoie (etats_finaux, X, y, dates) — etats_finaux sert à prédire les
     matchs à venir (état le plus récent de chaque équipe).
     """
-    rows = [f for f in fixtures
+    rows = [f for f in historique_90(fixtures)
             if f.get("fixture", {}).get("status", {}).get("short") in ("FT", "AET", "PEN")
             and f.get("goals", {}).get("home") is not None
             and f.get("goals", {}).get("away") is not None]
@@ -120,6 +109,7 @@ class ModeleML:
     def __init__(self, clf, etats: dict[int, _Etat]):
         self.clf = clf
         self.etats = etats
+        self.version = MODEL_VERSION
 
     def connait(self, team_id: int) -> bool:
         e = self.etats.get(team_id)
@@ -170,7 +160,6 @@ def evaluer_ml(fixtures: list, xg_par_fixture: dict[int, dict],
     chaque feature (permutation). Sert à la page « Étude du modèle ».
     """
     import numpy as np
-    from sklearn.calibration import CalibratedClassifierCV
     from sklearn.ensemble import HistGradientBoostingClassifier
     from sklearn.inspection import permutation_importance
 
@@ -189,11 +178,12 @@ def evaluer_ml(fixtures: list, xg_par_fixture: dict[int, dict],
     if len(yte) < 30 or len(set(ytr)) < 3:
         return None
 
-    clf = CalibratedClassifierCV(
-        HistGradientBoostingClassifier(max_iter=300, learning_rate=0.05, max_depth=4,
+    clf = ajuster_calibre(
+        HistGradientBoostingClassifier(max_iter=150, learning_rate=0.05, max_depth=4,
                                        l2_regularization=1.0, random_state=0),
-        method="isotonic", cv=3)
-    clf.fit(Xtr, ytr)
+        Xtr, ytr, [dates[i] for i in ordre[:cut]])
+    if clf is None:
+        return None
     P_ml = clf.predict_proba(Xte)
 
     # Baseline Elo (colonnes 1 = elo_home, 2 = elo_away)
@@ -225,7 +215,6 @@ def evaluer_ml(fixtures: list, xg_par_fixture: dict[int, dict],
 def entrainer(fixtures: list, xg_par_fixture: dict[int, dict],
               min_lignes: int = 200) -> ModeleML | None:
     """Entraîne le modèle ML (GBM calibré) sur l'historique d'une ligue."""
-    from sklearn.calibration import CalibratedClassifierCV
     from sklearn.ensemble import HistGradientBoostingClassifier
 
     etats, X, y, _dates = _rejouer(fixtures, xg_par_fixture)
@@ -236,6 +225,5 @@ def entrainer(fixtures: list, xg_par_fixture: dict[int, dict],
         max_iter=300, learning_rate=0.05, max_depth=4,
         l2_regularization=1.0, random_state=0,
     )
-    clf = CalibratedClassifierCV(base, method="isotonic", cv=3)
-    clf.fit(np.array(X), np.array(y))
-    return ModeleML(clf, etats)
+    clf = ajuster_calibre(base, X, y, _dates)
+    return ModeleML(clf, etats) if clf is not None else None

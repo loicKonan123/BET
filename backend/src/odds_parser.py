@@ -11,6 +11,8 @@ chaque sélection. Plus robuste qu'un seul bookmaker.
 """
 from collections import defaultdict
 from statistics import mean
+from math import isfinite
+from datetime import datetime, timezone
 
 from .api_client import ApiFootball
 
@@ -22,6 +24,8 @@ _CIBLES = {
         "Away": "2",
     },
     5: {  # Over/Under
+        "Over 1.5": "over_1.5",
+        "Under 1.5": "under_1.5",
         "Over 2.5": "over_2.5",
         "Under 2.5": "under_2.5",
     },
@@ -54,7 +58,9 @@ def parser_cotes(resp: list) -> dict[str, float]:
                 if cle is None:
                     continue
                 try:
-                    collecte[cle].append(float(v["odd"]))
+                    odd = float(v["odd"])
+                    if isfinite(odd) and odd > 1:
+                        collecte[cle].append(odd)
                 except (TypeError, ValueError, KeyError):
                     continue
 
@@ -62,9 +68,22 @@ def parser_cotes(resp: list) -> dict[str, float]:
 
 
 def recuperer_cotes(api: ApiFootball, fixture_id: int) -> dict[str, float]:
-    """Appelle l'API (1 requête) et renvoie les cotes moyennes par marché."""
-    data = api.get("odds", {"fixture": fixture_id})
-    return parser_cotes(data.get("response", []))
+    """Prix d'un opérateur unique, rafraîchis toutes les cinq minutes."""
+    return recuperer_prix(api, fixture_id)[0]
+
+
+def recuperer_prix(api: ApiFootball, fixture_id: int):
+    data = api.get("odds", {"fixture": fixture_id}, ttl=300)
+    books = [b for row in data.get("response", []) for b in row.get("bookmakers", [])]
+    candidates = [(b, parser_cotes([{"bookmakers": [b]}])) for b in books]
+    candidates.sort(key=lambda item: (-sum(k in item[1] for k in ("1", "X", "2")), -len(item[1]), str(item[0].get("id", ""))))
+    if not candidates:
+        return {}, None
+    book, prices = candidates[0]
+    path = api._cache_path("odds", {"fixture": fixture_id})
+    observed = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat() if path.exists() else None
+    return prices, {"bookmaker": book.get("name"), "bookmaker_id": book.get("id"),
+                    "collecte_le": observed, "type": "prix_operateur"}
 
 
 def _devig_proportionnel(inv: dict[str, float]) -> dict[str, float]:

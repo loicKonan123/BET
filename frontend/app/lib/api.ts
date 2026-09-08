@@ -2,6 +2,20 @@
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
+async function throwApiError(r: Response): Promise<never> {
+  let message = `HTTP ${r.status}`;
+  try {
+    const body = await r.json();
+    const detail = body?.detail ?? body?.erreur;
+    if (typeof detail === "string" && detail.trim()) {
+      message = detail;
+    }
+  } catch {
+    // Garde le statut HTTP si le backend ne renvoie pas de JSON exploitable.
+  }
+  throw new Error(message);
+}
+
 export type Selection = {
   match: string;
   ligue: string;
@@ -61,8 +75,8 @@ export type MarketSelection = {
   cle: string;
   marche: string;
   proba: number;
-  cote: number;
-  proba_implicite: number;
+  cote: number | null;
+  proba_implicite: number | null;
   value: number;
   est_value_bet: boolean;
 };
@@ -128,6 +142,13 @@ export type CompoEquipe = {
 export type Proba1X2 = { "1": number; "X": number; "2": number };
 
 export type MultiModeles = {
+  dynamique?: Proba1X2 | null;
+  contextuel?: Proba1X2 | null;
+  xg_simple?: Proba1X2 | null;
+  version_modele?: string;
+  modele_entraine?: boolean;
+  validation?: { n_test?: number; fusion_retenue?: boolean; note?: string };
+  provenance_cotes?: { bookmaker?: string; collecte_le?: string } | null;
   poisson: Proba1X2 | null;
   elo: Proba1X2 | null;
   elo_info: { rating_dom: number; rating_ext: number; ecart: number; terrain_neutre: boolean } | null;
@@ -138,10 +159,18 @@ export type MultiModeles = {
     poids_utilises: Record<string, number>;
     sources_disponibles: string[];
     accord: number | null;
+    diagnostic?: {
+      plages: Record<string, { min: number; max: number }>;
+      sensibilite: Record<string, { probabilites: Proba1X2; ecart_max: number; favori_change: boolean }>;
+      favori_stable: boolean | null;
+      note: string;
+    };
   };
 };
 
 export type MatchDetail = Analyse & {
+  prediction_id?: string;
+  cadre_prediction?: string;
   date: string;
   home: { id: number; name: string; logo?: string };
   away: { id: number; name: string; logo?: string };
@@ -158,12 +187,13 @@ export type MatchDetail = Analyse & {
 
 export async function getMatch(fixtureId: number): Promise<MatchDetail> {
   const r = await fetch(`${API_URL}/api/match/${fixtureId}`);
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  if (!r.ok) await throwApiError(r);
   return r.json();
 }
 
 // ---- Analyse IA (cerveau DeepSeek) ----
 export type AnalyseIA = {
+  prediction_id?: string;
   probabilites_ia: { victoire_domicile: number; nul: number; victoire_exterieur: number } | null;
   probabilites_finales?: { "1": number; X: number; "2": number } | null;
   prediction_equipe?: string | null;
@@ -172,6 +202,16 @@ export type AnalyseIA = {
   prediction: string | null;
   confiance: string | null;
   analyse: string;
+  version_analyse?: number;
+  analyse_detaillee?: {
+    lecture_match: string;
+    duel_tactique?: string;
+    signaux_statistiques: string;
+    scenario_alternatif?: string;
+    marche_value: string;
+    risques: string;
+    verdict: string;
+  };
   points_cles: string[];
   facteurs_correctifs_vs_poisson: string[];
   facteurs_risque?: string[];
@@ -188,13 +228,15 @@ export async function getAnalyseIA(
   fixtureId: number,
   force = false,
   cacheOnly = false,
+  predictionId?: string,
 ): Promise<AnalyseIA & { cache_absent?: boolean }> {
   const params = new URLSearchParams();
   if (force) params.set("force", "1");
   if (cacheOnly) params.set("cache_only", "1");
+  if (predictionId) params.set("prediction_id", predictionId);
   const qs = params.toString();
   const r = await fetch(`${API_URL}/api/match/${fixtureId}/ia${qs ? `?${qs}` : ""}`);
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  if (!r.ok) await throwApiError(r);
   return r.json();
 }
 
@@ -517,6 +559,7 @@ export type ModeleMetriques = {
 };
 
 export type EtudeML = {
+  prospectif?: { matchs_archives: number; matchs_evalues: number; metriques: ModeleMetriques | null };
   league: number;
   ligue: string;
   entraine: boolean;
@@ -527,6 +570,9 @@ export type EtudeML = {
     ml: ModeleMetriques;
     elo: ModeleMetriques;
     importance: { feature: string; poids: number }[];
+    version_modele?: string;
+    poids?: Record<string, number>;
+    validation?: { fusion_retenue: boolean; n_calibration: number; n_fusion: number; note: string };
   } | null;
   erreur?: string;
 };

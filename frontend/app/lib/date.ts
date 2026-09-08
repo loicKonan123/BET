@@ -2,6 +2,15 @@
 
 const TZ = "America/Toronto";
 
+/** Jour civil à Montréal, indépendant du fuseau du navigateur. */
+export function dateISOCanada(date: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(date);
+  const part = (type: string) => parts.find(p => p.type === type)!.value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
 /** Date + heure complète, ex. "dim. 7 juin 2026, 9:00 AM". */
 export function dateHeureCanada(iso: string): string {
   if (!iso) return "—";

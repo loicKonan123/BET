@@ -395,12 +395,13 @@ export default function MatchPage() {
   // (aucun appel DeepSeek). Sinon le bouton reste pour la lancer à la demande.
   useEffect(() => {
     if (!id) return;
+    if (m?.analyse_disponible === false) return;
     getAnalyseIA(id, false, true, m?.prediction_id)
       .then((d) => {
         if (!d.cache_absent && !d.erreur) setIa(d);
       })
       .catch(() => { /* silencieux : le bouton prend le relais */ });
-  }, [id, m?.prediction_id]);
+  }, [id, m?.prediction_id, m?.analyse_disponible]);
 
   async function demanderIA(force = false) {
     setIaLoading(true); setIaErreur(null);
@@ -424,6 +425,46 @@ export default function MatchPage() {
     { key: "classement", label: "Classement",  icon: "leaderboard", disabled: !m?.classement },
     { key: "forme",      label: "Forme & H2H", icon: "history" },
   ];
+
+  if (m?.analyse_disponible === false) {
+    const score = liveScore?.score
+      ? { domicile: liveScore.score.home, exterieur: liveScore.score.away }
+      : m.score;
+    return (
+      <>
+        <button onClick={() => router.back()} className="mb-lg text-on-surface-variant hover:text-primary">← Retour</button>
+        <div className="glass-card rounded-xl p-lg mb-lg">
+          <p className="text-on-surface-variant mb-lg">{m.ligue} · {dateHeureCanada(m.date)}</p>
+          <div className="flex items-center gap-md">
+            <Equipe id={m.home.id} nom={m.home.name} logo={m.home.logo} />
+            <div className="text-center font-mono">
+              <p className="text-headline-md">{score ? `${score.domicile} - ${score.exterieur}` : "VS"}</p>
+              <p className="text-sm text-on-surface-variant">{liveScore?.status ?? m.status}</p>
+            </div>
+            <Equipe id={m.away.id} nom={m.away.name} logo={m.away.logo} />
+          </div>
+        </div>
+        <div className="glass-card p-lg mb-lg" role="status">
+          <h2 className="font-semibold mb-sm">Analyse indisponible</h2>
+          <p className="text-on-surface-variant">{m.analyse_message}</p>
+        </div>
+        {m.compos.length > 0 && <PitchView compos={m.compos} />}
+        {m.classement?.groupes.map((g, i) => (
+          <div key={i} className="glass-card p-lg mb-lg">
+            <h2 className="font-semibold mb-sm">Classement · {g.nom}</h2>
+            <GroupeTable lignes={g.lignes} homeId={m.home.id} awayId={m.away.id} />
+          </div>
+        ))}
+        {[{ equipe: m.home.name, matchs: m.derniers_matchs_dom }, { equipe: m.away.name, matchs: m.derniers_matchs_ext }].map((e, i) => (
+          <div key={i} className="glass-card p-lg mb-lg">
+            <h2 className="font-semibold mb-sm">Derniers matchs · {e.equipe}</h2>
+            {e.matchs.length ? e.matchs.map((dm, j) => <DernierMatchLigne key={j} dm={dm} />) : <p className="text-on-surface-variant">Historique non disponible.</p>}
+          </div>
+        ))}
+        {m.h2h.length > 0 && <div className="glass-card p-lg"><h2 className="font-semibold mb-sm">Confrontations directes</h2>{m.h2h.map((h, i) => <H2HLigne key={i} h={h} homeId={m.home.id} />)}</div>}
+      </>
+    );
+  }
 
   return (
     <>

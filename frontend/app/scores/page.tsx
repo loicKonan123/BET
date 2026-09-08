@@ -5,19 +5,19 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Icon from "../components/Icon";
 import { ScoreMatch, ScoresJour, getScores } from "../lib/api";
-import { dateHeureCanada } from "../lib/date";
+import { dateHeureCanada, dateISOCanada } from "../lib/date";
 
-const LIVE_ST  = new Set(["1H", "2H", "HT", "ET", "BT", "P", "INT"]);
+const LIVE_ST  = new Set(["1H", "2H", "HT", "ET", "BT", "P", "INT", "LIVE"]);
 const DONE_ST  = new Set(["FT", "AET", "PEN", "AWD", "WO"]);
 
 function dateISO(d: Date) {
-  return d.toISOString().slice(0, 10);
+  return dateISOCanada(d);
 }
 
 function addDays(iso: string, n: number) {
   const d = new Date(iso + "T12:00:00Z");
   d.setUTCDate(d.getUTCDate() + n);
-  return dateISO(d);
+  return d.toISOString().slice(0, 10);
 }
 
 
@@ -159,20 +159,30 @@ export default function ScoresPage() {
   const [ligueSel, setLigueSel] = useState<number | null>(null);
   const [replies, setReplies] = useState<Set<number>>(new Set());
 
-  const load = useCallback(async (d: string) => {
-    setLoading(true);
+  const load = useCallback(async (d: string, signal: AbortSignal, silent = false) => {
+    if (!silent) { setLoading(true); setData(null); }
     setErreur(null);
     try {
-      const res = await getScores(d);
-      setData(res);
+      const res = await getScores(d, signal);
+      if (!signal.aborted) setData(res);
     } catch (e) {
-      setErreur(e instanceof Error ? e.message : "Erreur réseau");
+      if (!signal.aborted) setErreur(e instanceof Error ? e.message : "Erreur réseau");
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(date); setLigueSel(null); }, [date, load]);
+  useEffect(() => {
+    const controller = new AbortController();
+    load(date, controller.signal);
+    setLigueSel(null);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible" && date === dateISOCanada()) {
+        load(date, controller.signal, true);
+      }
+    }, 60_000);
+    return () => { controller.abort(); window.clearInterval(timer); };
+  }, [date, load]);
 
   const matchs = data?.matchs ?? [];
 
@@ -345,7 +355,7 @@ export default function ScoresPage() {
         <div className="text-center py-xl text-on-surface-variant">
           <Icon name="sports_soccer" style={{ fontSize: 48, opacity: 0.2 }} />
           <p className="mt-md text-sm">
-            {matchs.length === 0 ? "Aucun match ce jour-là dans nos ligues" : "Aucun match ne correspond aux filtres"}
+            {matchs.length === 0 ? "Aucun match fourni pour cette journée" : "Aucun match ne correspond aux filtres"}
           </p>
         </div>
       )}

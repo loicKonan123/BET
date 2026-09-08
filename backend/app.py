@@ -14,6 +14,7 @@ import logging
 import socket
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from time import perf_counter
 
 import uvicorn
@@ -485,7 +486,7 @@ def _compos(api, fixture_id: int, status: str = "") -> list[dict]:
 
 
 def _detail_match(api, fixture_id: int, stats_season: int | None = None,
-                  include_extras: bool = True) -> dict:
+                  include_extras: bool = True, allow_unavailable: bool = False) -> dict:
     """Construit le détail complet d'un match (probas, value, conseil, équipes)."""
     log.info("detail_match: fixture=%s ====================", fixture_id)
     # Sans cache : le statut/score d'un match évolue (NS -> live -> FT). Un
@@ -503,7 +504,18 @@ def _detail_match(api, fixture_id: int, stats_season: int | None = None,
 
     res = analyser_fixture(api, fx, stats_season=stats_season)
     if not res:
-        raise HTTPException(status_code=422, detail="Historique insuffisant pour ce match")
+        if not allow_unavailable:
+            raise HTTPException(status_code=422, detail="Historique insuffisant pour ce match")
+        res = {
+            "analyse_disponible": False,
+            "analyse_message": "Pas assez de matchs historiques pour calculer une analyse fiable.",
+            "fixture_id": fx.fixture_id,
+            "match": f"{fx.home_name} - {fx.away_name}",
+            "ligue": f["league"]["name"],
+            "status": fx.status,
+            "score": {"domicile": fx.buts_dom, "exterieur": fx.buts_ext}
+                if fx.buts_dom is not None and fx.buts_ext is not None else None,
+        }
 
     res["date"] = f["fixture"]["date"]
     res["league_id"] = f["league"]["id"]
@@ -521,7 +533,8 @@ def _detail_match(api, fixture_id: int, stats_season: int | None = None,
     match_status = f["fixture"]["status"]["short"]
     est_frais = match_status in STATUTS_LIVE or match_status in {"FT", "AET", "PEN"}
     res["classement"] = _classement(api, fx.league, fx.season, fx.home_id, fx.away_id, frais=est_frais)
-    res["multi_modeles"] = _multi_modeles(api, fx, res)
+    if res.get("analyse_disponible") is not False:
+        res["multi_modeles"] = _multi_modeles(api, fx, res)
     if include_extras:
         res["derniers_matchs_dom"] = _derniers_matchs(api, fx.home_id)
         res["derniers_matchs_ext"] = _derniers_matchs(api, fx.away_id)
@@ -557,7 +570,7 @@ def match_detail(fixture_id: int, stats_season: int | None = None):
     """Analyse approfondie d'un match + conseil de paris (statistique)."""
     try:
         api = ApiFootball()
-        return JSONResponse(_detail_match(api, fixture_id, stats_season))
+        return JSONResponse(_detail_match(api, fixture_id, stats_season, allow_unavailable=True))
     except HTTPException:
         raise
     except Exception as e:
@@ -1113,18 +1126,18 @@ def player_detail(player_id: int):
 
 @app.get("/api/scores")
 def scores_du_jour(date_str: str = ""):
-    """Tous les matchs d'une date dans nos ligues — passés, live, à venir."""
+    """Tous les matchs fournis pour une journée en heure de Montréal."""
     try:
         from datetime import date as dt_date
-        target = date_str or dt_date.today().isoformat()
+        try:
+            target = dt_date.fromisoformat(date_str).isoformat() if date_str else datetime.now(ZoneInfo("America/Toronto")).date().isoformat()
+        except ValueError:
+            raise HTTPException(400, "Date invalide : utilisez AAAA-MM-JJ")
         api = ApiFootball()
-        data = api.get("fixtures", {"date": target})
+        data = api.get("fixtures", {"date": target, "timezone": "America/Toronto"}, ttl=60)
         resp = data.get("response", [])
-        ids_autorises = set(IDS_SOCCER)
         out = []
         for f in resp:
-            if f["league"]["id"] not in ids_autorises:
-                continue
             status = f["fixture"]["status"]["short"]
             goals = f["goals"]
             out.append({
@@ -1153,8 +1166,10 @@ def scores_du_jour(date_str: str = ""):
                 },
             })
         # Trie par heure
-        out.sort(key=lambda x: x["heure"])
+        out.sort(key=lambda x: utc(x["heure"]))
         return JSONResponse({"date": target, "matchs": out})
+    except HTTPException:
+        raise
     except Exception as e:
         return JSONResponse({"erreur": str(e)}, status_code=500)
 
@@ -1166,16 +1181,13 @@ STATUTS_EN_COURS = {"1H", "HT", "2H", "ET", "BT", "P", "INT", "LIVE"}
 
 @app.get("/api/live")
 def live_matches():
-    """Tous les matchs en cours dans nos ligues, temps réel (sans cache)."""
+    """Tous les matchs en cours fournis par l'API, sans filtre de compétition."""
     try:
         api = ApiFootball()
         data = api.get("fixtures", {"live": "all"}, use_cache=False)
         resp = data.get("response", [])
-        ids_autorises = set(IDS_SOCCER)
         out = []
         for f in resp:
-            if f["league"]["id"] not in ids_autorises:
-                continue
             out.append({
                 "fixture_id": f["fixture"]["id"],
                 "status": f["fixture"]["status"]["short"],

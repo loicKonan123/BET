@@ -168,7 +168,8 @@ export type MultiModeles = {
   };
 };
 
-export type MatchDetail = Analyse & {
+export type MatchAnalyse = Analyse & {
+  analyse_disponible?: true;
   prediction_id?: string;
   cadre_prediction?: string;
   date: string;
@@ -184,6 +185,17 @@ export type MatchDetail = Analyse & {
   multi_modeles?: MultiModeles;
   erreur?: string;
 };
+
+export type MatchSansAnalyse = Omit<MatchAnalyse,
+  "analyse_disponible" | "buts_attendus" | "forme" | "probabilites" |
+  "consensus" | "sources_consensus" | "selections" | "conseil" | "multi_modeles"
+> & {
+  analyse_disponible: false;
+  analyse_message: string;
+  multi_modeles?: never;
+};
+
+export type MatchDetail = MatchAnalyse | MatchSansAnalyse;
 
 export async function getMatch(fixtureId: number): Promise<MatchDetail> {
   const r = await fetch(`${API_URL}/api/match/${fixtureId}`);
@@ -583,8 +595,8 @@ export async function getEtudeML(league: number): Promise<EtudeML> {
   return r.json();
 }
 
-export async function getScores(date: string): Promise<ScoresJour> {
-  const r = await fetch(`${API_URL}/api/scores?date_str=${date}`);
+export async function getScores(date: string, signal?: AbortSignal): Promise<ScoresJour> {
+  const r = await fetch(`${API_URL}/api/scores?date_str=${date}`, { signal, cache: "no-store" });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }

@@ -8,6 +8,7 @@ import logging
 import os
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 import requests
 from dotenv import load_dotenv
@@ -34,7 +35,7 @@ class ApiFootball:
     def _cache_path(self, endpoint: str, params: dict) -> Path:
         slug = endpoint.strip("/").replace("/", "_")
         if params:
-            slug += "_" + "_".join(f"{k}-{v}" for k, v in sorted(params.items()))
+            slug += "_" + "_".join(f"{quote(str(k), safe='')}-{quote(str(v), safe='')}" for k, v in sorted(params.items()))
         return CACHE_DIR / f"{slug}.json"
 
     def get(self, endpoint: str, params: dict | None = None,
